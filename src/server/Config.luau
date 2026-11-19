@@ -62,6 +62,17 @@ Config.MUTATIONS = {
 
 -- The cast: 12 original snack characters. builder names a function in
 -- SnackFactory that assembles the character from Parts; income is base $/sec.
+--
+-- Economy tuning notes (keep these in step when retuning):
+-- - Base incomes climb the ladder from $5/s (Common) to $15,000/s (Secret),
+--   roughly x2.5–x4 per rarity step, so a rarer snack always beats a common
+--   one even before mutations.
+-- - Mutations multiply income (Golden x2, Diamond x5, Rainbow x10, Void x25),
+--   so a mutated Common can rival a plain Rare — that is intentional, it keeps
+--   the belt exciting at every rarity.
+-- - Rebirths double ALL earnings per rebirth and cost 10,000 * 2^n, so the
+--   first rebirth pays for itself in a few minutes of Secret-tier income but
+--   takes much longer at Common tier — the intended progression gate.
 Config.CHARACTERS = {
 	{ name = "Sir Crunch Toast", rarity = "Common", income = 5, builder = "Toast" },
 	{ name = "Baron Pickle", rarity = "Common", income = 8, builder = "Pickle" },
@@ -98,6 +109,11 @@ function Config.rollCharacter()
 			table.insert(pool, def)
 		end
 	end
+	-- Defensive: every rarity has at least one character today, so this never
+	-- triggers — it only guards a future table edit that empties a rarity.
+	if #pool == 0 then
+		return Config.CHARACTERS[1]
+	end
 	return pool[math.random(1, #pool)]
 end
 
@@ -130,6 +146,13 @@ end
 -- Earnings multiplier from rebirths: x2 per rebirth, stacking.
 function Config.rebirthMultiplier(rebirths)
 	return 2 ^ rebirths
+end
+
+-- Base $/sec of one snack: its character income times its mutation multiplier.
+-- The single place this is computed — SnackFactory's label and GameServer's
+-- earnings must agree, so both read it from here instead of multiplying inline.
+function Config.incomeOf(def, mutation)
+	return def.income * mutation.multiplier
 end
 
 return Config

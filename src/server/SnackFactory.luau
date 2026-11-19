@@ -3,6 +3,8 @@
 -- on its root part for click-to-claim / click-to-steal, and a BillboardGui label
 -- showing its name, rarity, mutation and cash per second.
 
+local Config = require(script.Parent.Config)
+
 local SnackFactory = {}
 
 local function newPart(model, name, shape, size, color, offset)
@@ -28,6 +30,8 @@ end
 -- The first part created becomes the model's root part.
 local Builders = {}
 
+-- Toast: upright bread slice — tan block body, darker crust base, pale face
+-- panel, two eyes on the front.
 function Builders.Toast(model)
 	newPart(model, "Body", Enum.PartType.Block, Vector3.new(3, 3, 1), Color3.fromRGB(222, 184, 120), Vector3.new(0, 1.5, 0))
 	newPart(model, "Crust", Enum.PartType.Block, Vector3.new(3.2, 0.5, 1.1), Color3.fromRGB(160, 105, 45), Vector3.new(0, 0.2, 0))
@@ -36,6 +40,8 @@ function Builders.Toast(model)
 	eye(model, 0.6, 1.9, 0.7)
 end
 
+-- Pickle: horizontal green cylinder body with three bumps along the top
+-- and two eyes on the front.
 function Builders.Pickle(model)
 	local body = newPart(model, "Body", Enum.PartType.Cylinder, Vector3.new(3.4, 1.4, 1.4), Color3.fromRGB(90, 160, 60), Vector3.new(0, 1, 0))
 	body.CFrame = CFrame.new(0, 1, 0) * CFrame.Angles(0, 0, math.pi / 2)
@@ -46,6 +52,8 @@ function Builders.Pickle(model)
 	eye(model, 0.5, 1.2, 0.75)
 end
 
+-- Noodle: red ramen bowl with noodle mounds, a tilted chopstick sticking
+-- out, two eyes peeking over the noodles.
 function Builders.Noodle(model)
 	local bowl = newPart(model, "Bowl", Enum.PartType.Cylinder, Vector3.new(1.4, 3.2, 3.2), Color3.fromRGB(220, 60, 60), Vector3.new(0, 0.7, 0))
 	bowl.CFrame = CFrame.new(0, 0.7, 0) * CFrame.Angles(0, 0, math.pi / 2)
@@ -58,6 +66,8 @@ function Builders.Noodle(model)
 	eye(model, 0.5, 2.2, 0.75)
 end
 
+-- Ketchup: red squeeze bottle with a neck, white cap and label panel,
+-- two eyes on the front of the bottle.
 function Builders.Ketchup(model)
 	local bottle = newPart(model, "Body", Enum.PartType.Cylinder, Vector3.new(2.6, 1.8, 1.8), Color3.fromRGB(200, 30, 30), Vector3.new(0, 1.3, 0))
 	bottle.CFrame = CFrame.new(0, 1.3, 0) * CFrame.Angles(0, 0, math.pi / 2)
@@ -69,6 +79,8 @@ function Builders.Ketchup(model)
 	eye(model, 0.45, 1.6, 1.05)
 end
 
+-- Bubblegum: pink bubble-gum sphere with a lighter bubble blown on one
+-- side and a white stick, two eyes on the front.
 function Builders.Bubblegum(model)
 	newPart(model, "Body", Enum.PartType.Ball, Vector3.new(2.6, 2.6, 2.6), Color3.fromRGB(255, 130, 200), Vector3.new(0, 1.6, 0))
 	newPart(model, "Bubble", Enum.PartType.Ball, Vector3.new(1.6, 1.6, 1.6), Color3.fromRGB(255, 170, 220), Vector3.new(1.2, 2.4, 0.4))
@@ -77,6 +89,8 @@ function Builders.Bubblegum(model)
 	eye(model, 0.5, 1.9, 1.25)
 end
 
+-- Popcorn: red-and-white striped bucket with three kernels piled on top,
+-- two eyes on the front of the bucket.
 function Builders.Popcorn(model)
 	local bucket = newPart(model, "Bucket", Enum.PartType.Cylinder, Vector3.new(2, 2.4, 2.4), Color3.fromRGB(220, 50, 50), Vector3.new(0, 1, 0))
 	bucket.CFrame = CFrame.new(0, 1, 0) * CFrame.Angles(0, 0, math.pi / 2)
@@ -88,6 +102,8 @@ function Builders.Popcorn(model)
 	eye(model, 0.5, 1.2, 1.25)
 end
 
+-- Croissant: golden crescent — central ball with two angled tip balls and
+-- a shine highlight on top, two eyes on the front.
 function Builders.Croissant(model)
 	newPart(model, "Body", Enum.PartType.Ball, Vector3.new(2.2, 1.6, 1.6), Color3.fromRGB(210, 140, 60), Vector3.new(0, 1.2, 0))
 	local left = newPart(model, "LeftTip", Enum.PartType.Ball, Vector3.new(1.4, 1.1, 1.1), Color3.fromRGB(190, 120, 45), Vector3.new(-1.5, 1, 0.5))
@@ -99,6 +115,8 @@ function Builders.Croissant(model)
 	eye(model, 0.5, 1.4, 0.85)
 end
 
+-- Bacon: three wavy strips with fat lines, stacked and offset sideways,
+-- two eyes above the top strip.
 function Builders.Bacon(model)
 	for i = 1, 3 do
 		local y = 0.6 + (i - 1) * 0.9
@@ -110,6 +128,8 @@ function Builders.Bacon(model)
 	eye(model, 0.6, 2.4, 0.6)
 end
 
+-- Cupcake: pink cup with a white frosting dome and a cherry on top,
+-- two eyes on the front of the frosting.
 function Builders.Cupcake(model)
 	local cup = newPart(model, "Cup", Enum.PartType.Cylinder, Vector3.new(1.8, 2.2, 2.2), Color3.fromRGB(255, 150, 200), Vector3.new(0, 0.9, 0))
 	cup.CFrame = CFrame.new(0, 0.9, 0) * CFrame.Angles(0, 0, math.pi / 2)
@@ -119,6 +139,8 @@ function Builders.Cupcake(model)
 	eye(model, 0.5, 2.3, 1.2)
 end
 
+-- Taco: wedge shell standing upright with lettuce and tomato on top,
+-- two eyes on the front of the shell.
 function Builders.Taco(model)
 	local shell = Instance.new("WedgePart")
 	shell.Name = "Shell"
@@ -137,6 +159,8 @@ function Builders.Taco(model)
 	eye(model, 0.5, 1.4, 0.65)
 end
 
+-- Truffle: dark truffle sphere with four gold flecks on top, two eyes on
+-- the front.
 function Builders.Truffle(model)
 	newPart(model, "Body", Enum.PartType.Ball, Vector3.new(2.6, 2.6, 2.6), Color3.fromRGB(60, 35, 25), Vector3.new(0, 1.5, 0))
 	newPart(model, "Gold1", Enum.PartType.Ball, Vector3.new(0.4, 0.4, 0.4), Color3.fromRGB(255, 215, 0), Vector3.new(-0.8, 2.4, 0.8))
@@ -147,6 +171,8 @@ function Builders.Truffle(model)
 	eye(model, 0.5, 1.7, 1.25)
 end
 
+-- Donut: golden ring lying flat with pink frosting, a dark hole in the
+-- middle and five sprinkles around the top, two eyes on the front edge.
 function Builders.Donut(model)
 	local ring = newPart(model, "Ring", Enum.PartType.Cylinder, Vector3.new(1, 3.2, 3.2), Color3.fromRGB(255, 200, 60), Vector3.new(0, 1, 0))
 	ring.CFrame = CFrame.new(0, 1, 0) * CFrame.Angles(0, 0, math.pi / 2)
@@ -184,6 +210,13 @@ function SnackFactory.buildSnackModel(def, mutation)
 		or model:FindFirstChild("Ring")
 		or model:FindFirstChild("Strip1")
 		or model:GetChildren()[1]
+	-- Defensive: every builder adds parts, so root is always found — this only
+	-- guards a future builder that returns an empty model, which would
+	-- otherwise set PrimaryPart to nil and break the server's PivotTo moves.
+	if not root then
+		Builders.Toast(model)
+		root = model:FindFirstChild("Body")
+	end
 	model.PrimaryPart = root
 
 	-- Mutation aura: a small coloured orb floating above mutated snacks.
@@ -202,7 +235,10 @@ function SnackFactory.buildSnackModel(def, mutation)
 	anchor.CFrame = CFrame.new(0, 4.6, 0)
 	anchor.Parent = model
 
-	local income = def.income * mutation.multiplier
+	-- Label income from Config.incomeOf so the label can never drift from the
+	-- definition: character income times mutation multiplier. GameServer stores
+	-- the same product on the snack at spawn and sums stored incomes for pay.
+	local income = Config.incomeOf(def, mutation)
 
 	local gui = Instance.new("BillboardGui")
 	gui.Name = "SnackLabel"
