@@ -1,57 +1,60 @@
-# steal-a-snackrot
+# Steal a Snackrot
 
-[![make.fun · roblox-brainrot-01](https://make.fun/badge/roblox-brainrot-01.svg)](https://make.fun/bounty/roblox-brainrot-01?utm_source=github&utm_medium=readme&utm_campaign=roblox-brainrot-01)
-[![rank](https://make.fun/badge/roblox-brainrot-01/nofirita80/steal-a-snackrot/rank.svg)](https://make.fun/bounty/roblox-brainrot-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=roblox-brainrot-01)
-[![reward](https://make.fun/badge/roblox-brainrot-01/nofirita80/steal-a-snackrot/reward.svg)](https://make.fun/bounty/roblox-brainrot-01?utm_source=github&utm_medium=readme&utm_campaign=roblox-brainrot-01)
+[![make.fun bounty](https://make.fun/badge/roblox-brainrot-01/bounty)](https://make.fun/bounty/roblox-brainrot-01)
+[![make.fun rank](https://make.fun/badge/roblox-brainrot-01/rank/nofirita80/steal-a-snackrot)](https://make.fun/bounty/roblox-brainrot-01/leaderboard)
+[![make.fun reward](https://make.fun/badge/roblox-brainrot-01/reward/nofirita80/steal-a-snackrot)](https://make.fun/bounty/roblox-brainrot-01)
 
-Steal a Snackrot — a 3D Roblox brainrot collector game built by an AI agent for make.fun's “Make the best AI Roblox brainrot game” bounty, $1,000 in USDC.
-
-Living snack characters ride a conveyor through a giant kitchen world, each earning cash per second. Grab them, keep them on your base, climb rarities, mutations and rebirths — and dash home before the Midnight Hunger Wave sweeps the map or a rival steals your best snack.
+A 3D Roblox brainrot collector game built for the make.fun bounty (roblox-brainrot-01, $1,000 USDC). You play in a giant kitchen, grab absurd snack characters off a moving conveyor, keep them on your base so they earn cash every second, steal from other players, lock your base, rebirth for double earnings, and run home when the Midnight Hunger Wave sweeps the kitchen.
 
 ## How to play
 
-- **Claim snacks:** living snacks ride the central conveyor across the kitchen. Walk up to one and press **E** (or click it) to claim it — it walks to a free slot on your base and starts earning cash every second.
-- **Grow your base:** spend cash on extra base slots (each one costs more than the last) so you can hold more snacks.
-- **Steal:** walk to another player's base and grab one of their snacks — then carry it home before they catch you. A snack that was just stolen can't be stolen again for 30 seconds.
-- **Lock your base:** hit the Lock button to seal your base for 60 seconds (120-second cooldown after it ends).
-- **Rebirth:** spend cash to reset it to zero for a permanent x2 earnings multiplier (stacking) and +1 base slot.
-- **Midnight Hunger Wave:** every 4 minutes a 30-second warning sounds, then a wave sweeps the whole map outside the bases for 20 seconds. Anyone caught outside their own base is swept home and drops whatever they were carrying — get inside your base before it hits.
-
-The HUD shows your cash, income per second, rebirths and multiplier, slots used, the wave timer, and a live leaderboard. A help panel in-game explains the goal.
+- **Claim** — Walk up to a snack riding the red conveyor and click it, or press **E** near it. It hops over to a free slot on your base and starts earning.
+- **Grow the base** — Snacks earn cash every second. Spend it on more slots (up to 10) and chase rarer snacks and mutations for bigger income.
+- **Steal** — Click or press **E** near a snack on another player's base while their lock is down. Carry it home inside your own base rectangle to keep it. If you die or the wave catches you, you drop it.
+- **Lock** — Lock your base for 60 seconds so nobody can steal from it, then wait out the 120-second cooldown.
+- **Rebirth** — Reset your cash to zero to double all earnings forever (stacking) and gain an extra slot.
+- **Wave** — Every few minutes the Midnight Hunger Wave sweeps across the kitchen. Anyone caught outside their own base is teleported home and drops whatever they were carrying.
 
 ## The cast
 
-12 original snack characters, built entirely from Parts (no external assets), across 6 rarities:
-
 | Rarity | Characters | Base income |
 | --- | --- | --- |
-| Common | Sir Crunch Toast, Baron Pickle | $5–8/s |
-| Rare | DJ Noodle, Captain Ketchup | $20–30/s |
-| Epic | Professor Bubblegum, General Popcorn | $75–120/s |
-| Legendary | Countess Croissant, Sir Sizzle Bacon | $300–500/s |
-| Mythic | Queen Cupcake, King Taco | $1,200–2,000/s |
-| Secret | Lord Truffle, The Golden Donut | $6,000–15,000/s |
+| Common | Sir Crunch Toast, Baron Pickle | $5/s, $8/s |
+| Rare | DJ Noodle, Captain Ketchup | $20/s, $30/s |
+| Epic | Professor Bubblegum, General Popcorn | $75/s, $120/s |
+| Legendary | Countess Croissant, Sir Sizzle Bacon | $300/s, $500/s |
+| Mythic | Queen Cupcake, King Taco | $1,200/s, $2,000/s |
+| Secret | Lord Truffle, The Golden Donut | $6,000/s, $15,000/s |
 
-**Mutations** roll on every spawn and multiply a snack's income: Golden x2, Diamond x5, Rainbow x10, Void x25. A mutated Common can rival a plain Rare, so the belt stays exciting at every rarity.
+Every snack is built entirely from Parts — no external assets — with its own silhouette, eyes, floating name/rarity/income label and a coloured aura orb when mutated.
+
+## Mutations
+
+On spawn a snack rolls a mutation: None x1 (70%), Golden x2 (15%), Diamond x5 (8%), Rainbow x10 (5%), Void x25 (2%). A snack's income is its character income times its mutation multiplier, and the label and the earnings loop share one function for that number, so they can never disagree.
 
 ## How it works
 
-- `src/server/MapBuilder.luau` — builds the whole kitchen at runtime (~180 parts): conveyor with moving chevrons, 6 base plots with 8 slots each, giant dining table, fridge, shelves, lamps, and the Hunger Wave wall.
-- `src/server/Config.luau` — the single source of truth: characters, rarities, mutations, economy and wave tuning, plus the weighted-roll helpers.
-- `src/server/SnackFactory.luau` — assembles each snack character from Parts with its own silhouette, name/rarity/income label, and click-to-claim.
-- `src/server/GameServer.luau` — the game loop: spawning, claims, earnings, stealing, locks, rebirths, and the wave. Every rule is validated server-side.
-- `src/client/Game.client.luau` — the ScreenGui HUD: cash, income, rebirths, slots, leaderboard, wave banner, buttons, and help panel.
+- `src/server/Config.luau` — the single source of truth: plots, slot and rebirth prices, conveyor and wave timings, rarity weights and colours, mutation rolls, the twelve characters, and the shared income function.
+- `src/server/SnackFactory.luau` — builds each of the twelve snack characters from Parts, plus its click detector, floating label and mutation aura.
+- `src/server/MapBuilder.luau` — builds the giant kitchen: floor and rug, conveyor with sliding chevrons and gate arches, back wall with shelves and the gold sign, six coloured base plots, kitchen decorations and the wave wall.
+- `src/server/GameServer.luau` — owns all state and validates every rule server-side: claiming, stealing, locking, slots, rebirths, earnings, the wave state machine and the per-second state broadcast. Exposes `startWaveNow` for the tour.
+- `src/server/init.server.luau` — the server entry point; requires GameServer as a child of the script itself.
+- `src/client/Game.client.luau` — the ScreenGui over the 3D world: stats panel, richest-players leaderboard, wave banner, toasts, action buttons, context prompt and help panel. It only asks through RemoteEvents; the server decides.
 
-Works with a single player in Studio Play Solo (conveyor, claim, earnings, slots, wave, rebirth all run solo); stealing activates when a second player joins. No DataStores, no HTTP, no external asset IDs.
-
-## Build & run
+## Build and run
 
 ```sh
 rojo build default.project.json --output game.rbxl
 ```
 
-Then open `game.rbxl` in Roblox Studio and press Play. The live experience is linked in [PLAY.json](PLAY.json).
+Open `game.rbxl` in Roblox Studio, press Play, and play it. The published place is in [PLAY.json](PLAY.json).
+
+To hand the entry in as the grader does:
+
+```sh
+mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
+```
 
 ---
 
-<sub>Entered on [make.fun](https://make.fun/?ref=6expvb7p&utm_source=github&utm_medium=readme&utm_campaign=roblox-brainrot-01) · AI agents build software for cash rewards</sub>
+Built for [make.fun](https://make.fun) — bounty roblox-brainrot-01. Referral code: `6expvb7p` — https://make.fun/r/6expvb7p

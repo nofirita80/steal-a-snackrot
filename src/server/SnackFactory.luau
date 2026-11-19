@@ -1,299 +1,254 @@
--- SnackFactory: builds every snack character as a Model of Parts, no assets.
--- Each model is anchored (the server moves it with PivotTo), has a ClickDetector
--- on its root part for click-to-claim / click-to-steal, and a BillboardGui label
--- showing its name, rarity, mutation and cash per second.
+-- Steal a Snackrot: SnackFactory
+-- Builds every snack character entirely from Parts (no external assets).
+-- Each model is anchored, has a ClickDetector on its root part, a floating
+-- label above it, and a coloured aura orb when it carries a mutation.
 
 local Config = require(script.Parent.Config)
 
 local SnackFactory = {}
 
-local function newPart(model, name, shape, size, color, offset)
+local EYE_COLOR = Color3.fromRGB(30, 30, 30)
+
+local function makePart(parent: Instance, name: string, size: Vector3, color: Color3, offset: Vector3, shape: Enum.PartType?): Part
 	local part = Instance.new("Part")
 	part.Name = name
-	part.Shape = shape
 	part.Size = size
 	part.Color = color
-	part.CFrame = CFrame.new(offset)
+	part.Material = Enum.Material.SmoothPlastic
 	part.Anchored = true
 	part.CanCollide = false
-	part.CanTouch = true
-	part.Material = Enum.Material.SmoothPlastic
-	part.Parent = model
+	part.CanQuery = false
+	part.Position = offset
+	if shape then
+		part.Shape = shape
+	end
+	part.Parent = parent
 	return part
 end
 
-local function eye(model, x, y, z)
-	return newPart(model, "Eye", Enum.PartType.Ball, Vector3.new(0.45, 0.45, 0.45), Color3.fromRGB(25, 25, 25), Vector3.new(x, y, z))
+-- Two small dark ball eyes on the front (+Z face) of a character.
+-- Callers pass the front-face point in `centre` (its Z is already the
+-- face); the eyes sit just proud of it, they are not pushed further out.
+local function addEyes(model: Model, centre: Vector3, spread: number, height: number, size: number?)
+	local s = size or 0.28
+	makePart(model, "EyeLeft", Vector3.new(s, s, s), EYE_COLOR, centre + Vector3.new(-spread, height, 0.05), Enum.PartType.Ball)
+	makePart(model, "EyeRight", Vector3.new(s, s, s), EYE_COLOR, centre + Vector3.new(spread, height, 0.05), Enum.PartType.Ball)
 end
 
--- Builders: each assembles one character around the model origin (0,0,0).
--- The first part created becomes the model's root part.
-local Builders = {}
+local BUILDERS = {}
 
--- Toast: upright bread slice — tan block body, darker crust base, pale face
--- panel, two eyes on the front.
-function Builders.Toast(model)
-	newPart(model, "Body", Enum.PartType.Block, Vector3.new(3, 3, 1), Color3.fromRGB(222, 184, 120), Vector3.new(0, 1.5, 0))
-	newPart(model, "Crust", Enum.PartType.Block, Vector3.new(3.2, 0.5, 1.1), Color3.fromRGB(160, 105, 45), Vector3.new(0, 0.2, 0))
-	newPart(model, "Face", Enum.PartType.Block, Vector3.new(2.2, 2.2, 0.2), Color3.fromRGB(245, 220, 170), Vector3.new(0, 1.6, 0.55))
-	eye(model, -0.6, 1.9, 0.7)
-	eye(model, 0.6, 1.9, 0.7)
+BUILDERS.toast = function(model: Model)
+	makePart(model, "Body", Vector3.new(2.4, 2.8, 0.7), Color3.fromRGB(222, 178, 110), Vector3.new(0, 1.4, 0))
+	makePart(model, "Crust", Vector3.new(2.5, 0.5, 0.75), Color3.fromRGB(150, 95, 40), Vector3.new(0, 0.25, 0))
+	makePart(model, "Face", Vector3.new(1.8, 1.9, 0.1), Color3.fromRGB(245, 220, 170), Vector3.new(0, 1.6, 0.36))
+	addEyes(model, Vector3.new(0, 0, 0.42), 0.4, 1.8)
 end
 
--- Pickle: horizontal green cylinder body with three bumps along the top
--- and two eyes on the front.
-function Builders.Pickle(model)
-	local body = newPart(model, "Body", Enum.PartType.Cylinder, Vector3.new(3.4, 1.4, 1.4), Color3.fromRGB(90, 160, 60), Vector3.new(0, 1, 0))
-	body.CFrame = CFrame.new(0, 1, 0) * CFrame.Angles(0, 0, math.pi / 2)
-	newPart(model, "Bump1", Enum.PartType.Ball, Vector3.new(0.5, 0.5, 0.5), Color3.fromRGB(70, 130, 45), Vector3.new(-1, 1.8, 0))
-	newPart(model, "Bump2", Enum.PartType.Ball, Vector3.new(0.5, 0.5, 0.5), Color3.fromRGB(70, 130, 45), Vector3.new(0, 1.9, 0))
-	newPart(model, "Bump3", Enum.PartType.Ball, Vector3.new(0.5, 0.5, 0.5), Color3.fromRGB(70, 130, 45), Vector3.new(1, 1.8, 0))
-	eye(model, -0.5, 1.2, 0.75)
-	eye(model, 0.5, 1.2, 0.75)
-end
-
--- Noodle: red ramen bowl with noodle mounds, a tilted chopstick sticking
--- out, two eyes peeking over the noodles.
-function Builders.Noodle(model)
-	local bowl = newPart(model, "Bowl", Enum.PartType.Cylinder, Vector3.new(1.4, 3.2, 3.2), Color3.fromRGB(220, 60, 60), Vector3.new(0, 0.7, 0))
-	bowl.CFrame = CFrame.new(0, 0.7, 0) * CFrame.Angles(0, 0, math.pi / 2)
-	newPart(model, "Noodles1", Enum.PartType.Ball, Vector3.new(1.4, 1.4, 1.4), Color3.fromRGB(245, 220, 150), Vector3.new(-0.7, 1.8, 0))
-	newPart(model, "Noodles2", Enum.PartType.Ball, Vector3.new(1.4, 1.4, 1.4), Color3.fromRGB(245, 220, 150), Vector3.new(0.7, 1.8, 0))
-	newPart(model, "Noodles3", Enum.PartType.Ball, Vector3.new(1.2, 1.2, 1.2), Color3.fromRGB(250, 235, 180), Vector3.new(0, 2.4, 0))
-	local stick = newPart(model, "Chopstick", Enum.PartType.Block, Vector3.new(0.25, 3.5, 0.25), Color3.fromRGB(150, 100, 50), Vector3.new(1.2, 2.8, 0))
-	stick.CFrame = CFrame.new(1.2, 2.8, 0) * CFrame.Angles(0, 0, -0.4)
-	eye(model, -0.5, 2.2, 0.75)
-	eye(model, 0.5, 2.2, 0.75)
-end
-
--- Ketchup: red squeeze bottle with a neck, white cap and label panel,
--- two eyes on the front of the bottle.
-function Builders.Ketchup(model)
-	local bottle = newPart(model, "Body", Enum.PartType.Cylinder, Vector3.new(2.6, 1.8, 1.8), Color3.fromRGB(200, 30, 30), Vector3.new(0, 1.3, 0))
-	bottle.CFrame = CFrame.new(0, 1.3, 0) * CFrame.Angles(0, 0, math.pi / 2)
-	local neck = newPart(model, "Neck", Enum.PartType.Cylinder, Vector3.new(1, 0.9, 0.9), Color3.fromRGB(200, 30, 30), Vector3.new(0, 3, 0))
-	neck.CFrame = CFrame.new(0, 3, 0) * CFrame.Angles(0, 0, math.pi / 2)
-	newPart(model, "Cap", Enum.PartType.Block, Vector3.new(1, 0.6, 1), Color3.fromRGB(255, 255, 255), Vector3.new(0, 3.7, 0))
-	newPart(model, "Label", Enum.PartType.Block, Vector3.new(1.2, 1.2, 0.2), Color3.fromRGB(255, 255, 255), Vector3.new(0, 1.3, 0.95))
-	eye(model, -0.45, 1.6, 1.05)
-	eye(model, 0.45, 1.6, 1.05)
-end
-
--- Bubblegum: pink bubble-gum sphere with a lighter bubble blown on one
--- side and a white stick, two eyes on the front.
-function Builders.Bubblegum(model)
-	newPart(model, "Body", Enum.PartType.Ball, Vector3.new(2.6, 2.6, 2.6), Color3.fromRGB(255, 130, 200), Vector3.new(0, 1.6, 0))
-	newPart(model, "Bubble", Enum.PartType.Ball, Vector3.new(1.6, 1.6, 1.6), Color3.fromRGB(255, 170, 220), Vector3.new(1.2, 2.4, 0.4))
-	newPart(model, "Stick", Enum.PartType.Block, Vector3.new(0.4, 1.6, 0.4), Color3.fromRGB(255, 255, 255), Vector3.new(-1.1, 0.6, 0))
-	eye(model, -0.5, 1.9, 1.25)
-	eye(model, 0.5, 1.9, 1.25)
-end
-
--- Popcorn: red-and-white striped bucket with three kernels piled on top,
--- two eyes on the front of the bucket.
-function Builders.Popcorn(model)
-	local bucket = newPart(model, "Bucket", Enum.PartType.Cylinder, Vector3.new(2, 2.4, 2.4), Color3.fromRGB(220, 50, 50), Vector3.new(0, 1, 0))
-	bucket.CFrame = CFrame.new(0, 1, 0) * CFrame.Angles(0, 0, math.pi / 2)
-	newPart(model, "Stripe", Enum.PartType.Block, Vector3.new(0.3, 1.8, 2.5), Color3.fromRGB(255, 255, 255), Vector3.new(0, 1, 0))
-	newPart(model, "Kernel1", Enum.PartType.Ball, Vector3.new(1, 1, 1), Color3.fromRGB(250, 240, 200), Vector3.new(-0.8, 2.3, 0))
-	newPart(model, "Kernel2", Enum.PartType.Ball, Vector3.new(1, 1, 1), Color3.fromRGB(250, 240, 200), Vector3.new(0.8, 2.3, 0))
-	newPart(model, "Kernel3", Enum.PartType.Ball, Vector3.new(1.1, 1.1, 1.1), Color3.fromRGB(255, 250, 220), Vector3.new(0, 2.8, 0))
-	eye(model, -0.5, 1.2, 1.25)
-	eye(model, 0.5, 1.2, 1.25)
-end
-
--- Croissant: golden crescent — central ball with two angled tip balls and
--- a shine highlight on top, two eyes on the front.
-function Builders.Croissant(model)
-	newPart(model, "Body", Enum.PartType.Ball, Vector3.new(2.2, 1.6, 1.6), Color3.fromRGB(210, 140, 60), Vector3.new(0, 1.2, 0))
-	local left = newPart(model, "LeftTip", Enum.PartType.Ball, Vector3.new(1.4, 1.1, 1.1), Color3.fromRGB(190, 120, 45), Vector3.new(-1.5, 1, 0.5))
-	left.CFrame = CFrame.new(-1.5, 1, 0.5) * CFrame.Angles(0, 0.5, 0)
-	local right = newPart(model, "RightTip", Enum.PartType.Ball, Vector3.new(1.4, 1.1, 1.1), Color3.fromRGB(190, 120, 45), Vector3.new(1.5, 1, 0.5))
-	right.CFrame = CFrame.new(1.5, 1, 0.5) * CFrame.Angles(0, -0.5, 0)
-	newPart(model, "Shine", Enum.PartType.Ball, Vector3.new(1, 0.7, 1), Color3.fromRGB(235, 175, 90), Vector3.new(0, 1.9, 0))
-	eye(model, -0.5, 1.4, 0.85)
-	eye(model, 0.5, 1.4, 0.85)
-end
-
--- Bacon: three wavy strips with fat lines, stacked and offset sideways,
--- two eyes above the top strip.
-function Builders.Bacon(model)
-	for i = 1, 3 do
-		local y = 0.6 + (i - 1) * 0.9
-		local x = (i - 2) * 0.5
-		newPart(model, "Strip" .. i, Enum.PartType.Block, Vector3.new(3.2, 0.35, 1.1), Color3.fromRGB(190, 60, 50), Vector3.new(x, y, 0))
-		newPart(model, "Fat" .. i, Enum.PartType.Block, Vector3.new(3.2, 0.15, 1.15), Color3.fromRGB(245, 200, 170), Vector3.new(x, y + 0.2, 0))
+BUILDERS.pickle = function(model: Model)
+	local body = makePart(model, "Body", Vector3.new(3.2, 1.1, 1.1), Color3.fromRGB(90, 170, 70), Vector3.new(0, 1.0, 0), Enum.PartType.Cylinder)
+	body.CFrame = CFrame.new(0, 1.0, 0) * CFrame.Angles(0, 0, math.rad(90))
+	for i = -1, 1 do
+		makePart(model, "Bump" .. tostring(i + 2), Vector3.new(0.5, 0.5, 0.5), Color3.fromRGB(70, 140, 55), Vector3.new(i * 1.0, 1.6, 0), Enum.PartType.Ball)
 	end
-	eye(model, -0.6, 2.4, 0.6)
-	eye(model, 0.6, 2.4, 0.6)
+	addEyes(model, Vector3.new(0, 0, 0.6), 0.45, 1.15)
 end
 
--- Cupcake: pink cup with a white frosting dome and a cherry on top,
--- two eyes on the front of the frosting.
-function Builders.Cupcake(model)
-	local cup = newPart(model, "Cup", Enum.PartType.Cylinder, Vector3.new(1.8, 2.2, 2.2), Color3.fromRGB(255, 150, 200), Vector3.new(0, 0.9, 0))
-	cup.CFrame = CFrame.new(0, 0.9, 0) * CFrame.Angles(0, 0, math.pi / 2)
-	newPart(model, "Frosting", Enum.PartType.Ball, Vector3.new(2.4, 1.6, 2.4), Color3.fromRGB(255, 255, 255), Vector3.new(0, 2.2, 0))
-	newPart(model, "Cherry", Enum.PartType.Ball, Vector3.new(0.7, 0.7, 0.7), Color3.fromRGB(220, 30, 50), Vector3.new(0, 3.1, 0))
-	eye(model, -0.5, 2.3, 1.2)
-	eye(model, 0.5, 2.3, 1.2)
+BUILDERS.noodle = function(model: Model)
+	makePart(model, "Bowl", Vector3.new(2.6, 1.2, 2.6), Color3.fromRGB(200, 50, 50), Vector3.new(0, 0.7, 0), Enum.PartType.Cylinder)
+	makePart(model, "Rim", Vector3.new(2.8, 0.3, 2.8), Color3.fromRGB(220, 70, 70), Vector3.new(0, 1.3, 0), Enum.PartType.Cylinder)
+	for i = -1, 1 do
+		makePart(model, "Noodle" .. tostring(i + 2), Vector3.new(0.8, 0.5, 0.8), Color3.fromRGB(245, 225, 170), Vector3.new(i * 0.7, 1.55, 0), Enum.PartType.Ball)
+	end
+	local stick = makePart(model, "Chopstick", Vector3.new(0.18, 3.0, 0.18), Color3.fromRGB(180, 130, 60), Vector3.new(0.9, 2.4, 0))
+	stick.CFrame = CFrame.new(0.9, 2.4, 0) * CFrame.Angles(0, 0, math.rad(-30))
+	addEyes(model, Vector3.new(0, 0, 1.35), 0.5, 0.9)
 end
 
--- Taco: wedge shell standing upright with lettuce and tomato on top,
--- two eyes on the front of the shell.
-function Builders.Taco(model)
-	local shell = Instance.new("WedgePart")
-	shell.Name = "Shell"
-	shell.Size = Vector3.new(3, 2.4, 1.2)
-	shell.Color = Color3.fromRGB(240, 190, 80)
-	shell.CFrame = CFrame.new(0, 1.2, 0)
-	shell.Anchored = true
-	shell.CanCollide = false
-	shell.CanTouch = true
-	shell.Material = Enum.Material.SmoothPlastic
-	shell.Parent = model
-	newPart(model, "Lettuce1", Enum.PartType.Ball, Vector3.new(0.8, 0.8, 0.8), Color3.fromRGB(90, 200, 90), Vector3.new(-0.9, 2.5, 0))
-	newPart(model, "Lettuce2", Enum.PartType.Ball, Vector3.new(0.8, 0.8, 0.8), Color3.fromRGB(90, 200, 90), Vector3.new(0.9, 2.5, 0))
-	newPart(model, "Tomato", Enum.PartType.Ball, Vector3.new(0.8, 0.8, 0.8), Color3.fromRGB(220, 60, 60), Vector3.new(0, 2.7, 0))
-	eye(model, -0.5, 1.4, 0.65)
-	eye(model, 0.5, 1.4, 0.65)
+BUILDERS.ketchup = function(model: Model)
+	makePart(model, "Body", Vector3.new(1.8, 2.4, 1.8), Color3.fromRGB(210, 30, 30), Vector3.new(0, 1.2, 0), Enum.PartType.Cylinder)
+	makePart(model, "Neck", Vector3.new(0.9, 0.8, 0.9), Color3.fromRGB(200, 25, 25), Vector3.new(0, 2.8, 0), Enum.PartType.Cylinder)
+	makePart(model, "Cap", Vector3.new(1.0, 0.5, 1.0), Color3.fromRGB(245, 245, 245), Vector3.new(0, 3.4, 0), Enum.PartType.Cylinder)
+	makePart(model, "Label", Vector3.new(1.2, 1.0, 0.1), Color3.fromRGB(250, 250, 250), Vector3.new(0, 1.2, 0.92))
+	addEyes(model, Vector3.new(0, 0, 0.95), 0.35, 1.5)
 end
 
--- Truffle: dark truffle sphere with four gold flecks on top, two eyes on
--- the front.
-function Builders.Truffle(model)
-	newPart(model, "Body", Enum.PartType.Ball, Vector3.new(2.6, 2.6, 2.6), Color3.fromRGB(60, 35, 25), Vector3.new(0, 1.5, 0))
-	newPart(model, "Gold1", Enum.PartType.Ball, Vector3.new(0.4, 0.4, 0.4), Color3.fromRGB(255, 215, 0), Vector3.new(-0.8, 2.4, 0.8))
-	newPart(model, "Gold2", Enum.PartType.Ball, Vector3.new(0.4, 0.4, 0.4), Color3.fromRGB(255, 215, 0), Vector3.new(0.7, 2.6, 0.5))
-	newPart(model, "Gold3", Enum.PartType.Ball, Vector3.new(0.4, 0.4, 0.4), Color3.fromRGB(255, 215, 0), Vector3.new(0, 2.2, 1.1))
-	newPart(model, "Gold4", Enum.PartType.Ball, Vector3.new(0.4, 0.4, 0.4), Color3.fromRGB(255, 215, 0), Vector3.new(1, 1.8, -0.6))
-	eye(model, -0.5, 1.7, 1.25)
-	eye(model, 0.5, 1.7, 1.25)
+BUILDERS.bubblegum = function(model: Model)
+	makePart(model, "Body", Vector3.new(2.2, 2.2, 2.2), Color3.fromRGB(255, 130, 200), Vector3.new(0, 1.4, 0), Enum.PartType.Ball)
+	makePart(model, "Bubble", Vector3.new(1.1, 1.1, 1.1), Color3.fromRGB(255, 190, 225), Vector3.new(1.2, 1.2, 0.3), Enum.PartType.Ball)
+	makePart(model, "Stick", Vector3.new(0.35, 1.4, 0.35), Color3.fromRGB(250, 250, 250), Vector3.new(0, 0.3, 0), Enum.PartType.Cylinder)
+	addEyes(model, Vector3.new(0, 0, 1.1), 0.4, 1.6)
 end
 
--- Donut: golden ring lying flat with pink frosting, a dark hole in the
--- middle and five sprinkles around the top, two eyes on the front edge.
-function Builders.Donut(model)
-	local ring = newPart(model, "Ring", Enum.PartType.Cylinder, Vector3.new(1, 3.2, 3.2), Color3.fromRGB(255, 200, 60), Vector3.new(0, 1, 0))
-	ring.CFrame = CFrame.new(0, 1, 0) * CFrame.Angles(0, 0, math.pi / 2)
-	local frost = newPart(model, "Frosting", Enum.PartType.Cylinder, Vector3.new(0.5, 2.6, 2.6), Color3.fromRGB(255, 120, 200), Vector3.new(0, 1.6, 0))
-	frost.CFrame = CFrame.new(0, 1.6, 0) * CFrame.Angles(0, 0, math.pi / 2)
-	newPart(model, "Hole", Enum.PartType.Cylinder, Vector3.new(0.6, 0.9, 0.9), Color3.fromRGB(120, 70, 20), Vector3.new(0, 1.7, 0))
-		.CFrame = CFrame.new(0, 1.7, 0) * CFrame.Angles(0, 0, math.pi / 2)
+BUILDERS.popcorn = function(model: Model)
+	local bucket = makePart(model, "Bucket", Vector3.new(2.4, 2.0, 2.4), Color3.fromRGB(220, 40, 40), Vector3.new(0, 1.0, 0), Enum.PartType.Cylinder)
+	bucket.TopSurface = Enum.SurfaceType.Smooth
+	makePart(model, "Stripe", Vector3.new(2.45, 0.5, 2.45), Color3.fromRGB(250, 250, 250), Vector3.new(0, 1.0, 0), Enum.PartType.Cylinder)
+	for i = -1, 1 do
+		makePart(model, "Kernel" .. tostring(i + 2), Vector3.new(0.9, 0.9, 0.9), Color3.fromRGB(250, 240, 200), Vector3.new(i * 0.7, 2.3, 0), Enum.PartType.Ball)
+	end
+	addEyes(model, Vector3.new(0, 0, 1.25), 0.45, 1.1)
+end
+
+BUILDERS.croissant = function(model: Model)
+	makePart(model, "Body", Vector3.new(2.0, 1.6, 1.4), Color3.fromRGB(215, 150, 60), Vector3.new(0, 1.2, 0), Enum.PartType.Ball)
+	local tipL = makePart(model, "TipLeft", Vector3.new(1.2, 1.0, 1.0), Color3.fromRGB(200, 135, 50), Vector3.new(-1.3, 0.9, 0), Enum.PartType.Ball)
+	tipL.CFrame = CFrame.new(-1.3, 0.9, 0) * CFrame.Angles(0, 0, math.rad(35))
+	local tipR = makePart(model, "TipRight", Vector3.new(1.2, 1.0, 1.0), Color3.fromRGB(200, 135, 50), Vector3.new(1.3, 0.9, 0), Enum.PartType.Ball)
+	tipR.CFrame = CFrame.new(1.3, 0.9, 0) * CFrame.Angles(0, 0, math.rad(-35))
+	makePart(model, "Shine", Vector3.new(0.9, 0.4, 0.2), Color3.fromRGB(255, 220, 140), Vector3.new(-0.3, 1.7, 0.7))
+	addEyes(model, Vector3.new(0, 0, 0.75), 0.4, 1.35)
+end
+
+BUILDERS.bacon = function(model: Model)
+	for i = 1, 3 do
+		local strip = makePart(model, "Strip" .. tostring(i), Vector3.new(2.8, 0.35, 1.0), Color3.fromRGB(190, 50, 45), Vector3.new(0, 0.5 + i * 0.6, 0))
+		strip.CFrame = CFrame.new(0, 0.5 + i * 0.6, 0) * CFrame.Angles(0, math.rad((i - 2) * 12), 0)
+		makePart(model, "Fat" .. tostring(i), Vector3.new(2.85, 0.12, 0.4), Color3.fromRGB(250, 220, 200), Vector3.new(0, 0.55 + i * 0.6, 0.3))
+	end
+	addEyes(model, Vector3.new(0, 0, 0.55), 0.45, 1.7)
+end
+
+BUILDERS.cupcake = function(model: Model)
+	makePart(model, "Cup", Vector3.new(2.0, 1.4, 2.0), Color3.fromRGB(255, 120, 170), Vector3.new(0, 0.7, 0), Enum.PartType.Cylinder)
+	makePart(model, "Frosting", Vector3.new(2.1, 1.4, 2.1), Color3.fromRGB(250, 250, 250), Vector3.new(0, 1.9, 0), Enum.PartType.Ball)
+	makePart(model, "Cherry", Vector3.new(0.6, 0.6, 0.6), Color3.fromRGB(220, 30, 40), Vector3.new(0, 2.8, 0), Enum.PartType.Ball)
+	addEyes(model, Vector3.new(0, 0, 1.05), 0.4, 0.9)
+end
+
+BUILDERS.taco = function(model: Model)
+	local shell = makePart(model, "Shell", Vector3.new(0.7, 2.6, 2.6), Color3.fromRGB(230, 180, 80), Vector3.new(0, 1.3, 0), Enum.PartType.Wedge)
+	shell.CFrame = CFrame.new(0, 1.3, 0) * CFrame.Angles(0, math.rad(90), 0)
+	makePart(model, "Lettuce", Vector3.new(0.9, 0.6, 2.2), Color3.fromRGB(90, 200, 80), Vector3.new(0, 2.6, 0))
+	makePart(model, "Tomato", Vector3.new(0.7, 0.5, 0.7), Color3.fromRGB(220, 50, 50), Vector3.new(0.5, 2.9, 0.4), Enum.PartType.Ball)
+	addEyes(model, Vector3.new(0, 0, 1.35), 0.45, 1.4)
+end
+
+BUILDERS.truffle = function(model: Model)
+	makePart(model, "Body", Vector3.new(2.2, 2.2, 2.2), Color3.fromRGB(70, 45, 25), Vector3.new(0, 1.3, 0), Enum.PartType.Ball)
+	for i = 1, 4 do
+		local angle = (i - 1) * math.rad(90) + math.rad(45)
+		makePart(model, "Fleck" .. tostring(i), Vector3.new(0.35, 0.35, 0.35), Color3.fromRGB(255, 210, 90), Vector3.new(math.cos(angle) * 0.6, 2.3, math.sin(angle) * 0.6), Enum.PartType.Ball)
+	end
+	addEyes(model, Vector3.new(0, 0, 1.1), 0.4, 1.4)
+end
+
+BUILDERS.donut = function(model: Model)
+	local ring = makePart(model, "Ring", Vector3.new(2.8, 0.7, 2.8), Color3.fromRGB(220, 170, 80), Vector3.new(0, 0.6, 0), Enum.PartType.Cylinder)
+	ring.TopSurface = Enum.SurfaceType.Smooth
+	makePart(model, "Frosting", Vector3.new(2.85, 0.25, 2.85), Color3.fromRGB(255, 140, 190), Vector3.new(0, 0.95, 0), Enum.PartType.Cylinder)
+	makePart(model, "Hole", Vector3.new(0.9, 0.8, 0.9), Color3.fromRGB(60, 40, 20), Vector3.new(0, 0.6, 0), Enum.PartType.Cylinder)
 	for i = 1, 5 do
 		local angle = (i - 1) * (math.pi * 2 / 5)
-		newPart(model, "Sprinkle" .. i, Enum.PartType.Block, Vector3.new(0.5, 0.15, 0.15),
-			Color3.fromRGB(255, 255, 255), Vector3.new(math.cos(angle) * 1, 1.9, math.sin(angle) * 1))
+		makePart(model, "Sprinkle" .. tostring(i), Vector3.new(0.35, 0.12, 0.15), Color3.fromRGB(255, 255, 255), Vector3.new(math.cos(angle) * 1.0, 1.1, math.sin(angle) * 1.0))
 	end
-	eye(model, -0.6, 1.1, 1.6)
-	eye(model, 0.6, 1.1, 1.6)
+	addEyes(model, Vector3.new(0, 0, 1.45), 0.4, 0.75, 0.24)
 end
 
--- Builds one snack model. def is a Config.CHARACTERS entry, mutation a
--- Config.MUTATIONS entry. Returns the Model, unparented, at the origin.
-function SnackFactory.buildSnackModel(def, mutation)
-	local model = Instance.new("Model")
-	model.Name = "Snack"
-
-	local builder = Builders[def.builder]
-	if builder then
-		builder(model)
-	else
-		Builders.Toast(model)
-	end
-
-	local root = model:FindFirstChild("Body")
-		or model:FindFirstChild("Bowl")
-		or model:FindFirstChild("Bucket")
-		or model:FindFirstChild("Cup")
-		or model:FindFirstChild("Shell")
-		or model:FindFirstChild("Ring")
-		or model:FindFirstChild("Strip1")
-		or model:GetChildren()[1]
-	-- Defensive: every builder adds parts, so root is always found — this only
-	-- guards a future builder that returns an empty model, which would
-	-- otherwise set PrimaryPart to nil and break the server's PivotTo moves.
-	if not root then
-		Builders.Toast(model)
-		root = model:FindFirstChild("Body")
-	end
-	model.PrimaryPart = root
-
-	-- Mutation aura: a small coloured orb floating above mutated snacks.
-	if mutation.name ~= "None" then
-		newPart(model, "Aura", Enum.PartType.Ball, Vector3.new(0.9, 0.9, 0.9), mutation.color, Vector3.new(0, 4.2, 0))
-	end
-
-	-- Label anchor above the character, carrying the BillboardGui.
+-- Floating label --------------------------------------------------------------
+local function addLabel(model: Model, character, mutation: { name: string, multiplier: number, color: Color3 })
 	local anchor = Instance.new("Part")
 	anchor.Name = "LabelAnchor"
-	anchor.Size = Vector3.new(1, 1, 1)
+	anchor.Size = Vector3.new(0.2, 0.2, 0.2)
 	anchor.Transparency = 1
 	anchor.Anchored = true
 	anchor.CanCollide = false
-	anchor.CanTouch = false
-	anchor.CFrame = CFrame.new(0, 4.6, 0)
+	anchor.CanQuery = false
+	anchor.Position = Vector3.new(0, 4.4, 0)
 	anchor.Parent = model
-
-	-- Label income from Config.incomeOf so the label can never drift from the
-	-- definition: character income times mutation multiplier. GameServer stores
-	-- the same product on the snack at spawn and sums stored incomes for pay.
-	local income = Config.incomeOf(def, mutation)
 
 	local gui = Instance.new("BillboardGui")
 	gui.Name = "SnackLabel"
-	gui.Size = UDim2.fromOffset(220, 92)
+	gui.Size = UDim2.new(0, 220, 0, 92)
 	gui.StudsOffsetWorldSpace = Vector3.new(0, 0, 0)
-	gui.MaxDistance = 140
-	gui.LightInfluence = 0
+	gui.AlwaysOnTop = true
 	gui.Parent = anchor
 
+	local income = Config.snackIncome(character, mutation)
+	local mutationText = ""
+	if mutation.name ~= "None" then
+		mutationText = "  " .. mutation.name .. " x" .. tostring(mutation.multiplier)
+	end
+
 	local nameLabel = Instance.new("TextLabel")
-	nameLabel.Name = "Name"
-	nameLabel.Size = UDim2.new(1, 0, 0, 32)
-	nameLabel.Position = UDim2.new(0, 0, 0, 0)
-	nameLabel.BackgroundTransparency = 0.35
-	nameLabel.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+	nameLabel.Size = UDim2.new(1, 0, 0.35, 0)
+	nameLabel.BackgroundTransparency = 1
+	nameLabel.Text = character.name
 	nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-	nameLabel.Text = def.name
 	nameLabel.TextScaled = true
-	nameLabel.Font = Enum.Font.SourceSansBold
+	nameLabel.Font = Enum.Font.GothamBold
 	nameLabel.Parent = gui
 
-	local rarityText = def.rarity
-	if mutation.name ~= "None" then
-		rarityText = def.rarity .. "  •  " .. mutation.name .. " x" .. tostring(mutation.multiplier)
-	end
 	local rarityLabel = Instance.new("TextLabel")
-	rarityLabel.Name = "Rarity"
-	rarityLabel.Size = UDim2.new(1, 0, 0, 26)
-	rarityLabel.Position = UDim2.new(0, 0, 0, 32)
-	rarityLabel.BackgroundTransparency = 0.35
-	rarityLabel.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
-	rarityLabel.TextColor3 = mutation.color
-	rarityLabel.Text = rarityText
+	rarityLabel.Position = UDim2.new(0, 0, 0.35, 0)
+	rarityLabel.Size = UDim2.new(1, 0, 0.3, 0)
+	rarityLabel.BackgroundTransparency = 1
+	rarityLabel.Text = character.rarity .. mutationText
+	rarityLabel.TextColor3 = Config.RARITY_COLORS[character.rarity]
 	rarityLabel.TextScaled = true
-	rarityLabel.Font = Enum.Font.SourceSansBold
+	rarityLabel.Font = Enum.Font.GothamBold
 	rarityLabel.Parent = gui
 
 	local incomeLabel = Instance.new("TextLabel")
-	incomeLabel.Name = "Income"
-	incomeLabel.Size = UDim2.new(1, 0, 0, 30)
-	incomeLabel.Position = UDim2.new(0, 0, 0, 58)
-	incomeLabel.BackgroundTransparency = 0.35
-	incomeLabel.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
-	incomeLabel.TextColor3 = Color3.fromRGB(120, 255, 120)
+	incomeLabel.Position = UDim2.new(0, 0, 0.65, 0)
+	incomeLabel.Size = UDim2.new(1, 0, 0.35, 0)
+	incomeLabel.BackgroundTransparency = 1
 	incomeLabel.Text = "$" .. tostring(income) .. "/s"
+	incomeLabel.TextColor3 = Color3.fromRGB(80, 255, 120)
 	incomeLabel.TextScaled = true
-	incomeLabel.Font = Enum.Font.SourceSansBold
+	incomeLabel.Font = Enum.Font.GothamBold
 	incomeLabel.Parent = gui
+end
 
-	-- Clicking a snack claims it (on the belt) or steals it (on a base).
-	local click = Instance.new("ClickDetector")
-	click.Name = "SnackClick"
-	click.MaxActivationDistance = 40
-	click.Parent = root
+local function addAura(model: Model, mutation: { name: string, multiplier: number, color: Color3 })
+	if mutation.name == "None" then
+		return
+	end
+	local orb = Instance.new("Part")
+	orb.Name = "AuraOrb"
+	orb.Size = Vector3.new(0.7, 0.7, 0.7)
+	orb.Shape = Enum.PartType.Ball
+	orb.Color = mutation.color
+	orb.Material = Enum.Material.Neon
+	orb.Anchored = true
+	orb.CanCollide = false
+	orb.CanQuery = false
+	orb.Position = Vector3.new(0, 5.4, 0)
+	orb.Parent = model
+end
 
+-- Public API ------------------------------------------------------------------
+-- Builds a snack model at the given world position. id is the server's
+-- unique snack id; state/owner attributes are read by the client.
+function SnackFactory.build(character, mutation, id: number, position: Vector3): Model
+	local model = Instance.new("Model")
+	model.Name = character.name .. "_" .. tostring(id)
+
+	local builder = BUILDERS[character.shape]
+	if builder then
+		builder(model)
+	else
+		makePart(model, "Body", Vector3.new(2, 2, 2), Color3.fromRGB(200, 200, 200), Vector3.new(0, 1, 0), Enum.PartType.Ball)
+	end
+
+	local root = model:FindFirstChild("Body") or model:GetChildren()[1]
+	model.PrimaryPart = root :: BasePart
+
+	local detector = Instance.new("ClickDetector")
+	detector.MaxActivationDistance = 40
+	detector.Parent = root
+
+	addLabel(model, character, mutation)
+	addAura(model, mutation)
+
+	model:SetAttribute("id", id)
+	model:SetAttribute("state", "conveyor")
+	model:SetAttribute("ownerUserId", 0)
+	model:SetAttribute("characterName", character.name)
+	model:SetAttribute("rarity", character.rarity)
+	model:SetAttribute("mutation", mutation.name)
+	model:SetAttribute("income", Config.snackIncome(character, mutation))
+
+	model:PivotTo(CFrame.new(position))
 	return model
 end
 

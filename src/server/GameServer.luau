@@ -1,11 +1,11 @@
--- GameServer: all of Steal a Snackrot's server logic in one place.
--- Owns the game state (players, snacks, wave), the conveyor, claims, bases,
--- earnings, stealing, locks, rebirths and the Midnight Hunger Wave.
--- The client only ever asks; every rule is validated here.
+-- Steal a Snackrot: GameServer
+-- Owns all game state: players, snacks and the Midnight Hunger Wave.
+-- The client only asks; every rule is validated here, server-side.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
 
 local Config = require(script.Parent.Config)
 local MapBuilder = require(script.Parent.MapBuilder)
@@ -13,461 +13,470 @@ local SnackFactory = require(script.Parent.SnackFactory)
 
 local GameServer = {}
 
-local layout
+local REMOTE_NAMES = { "ClaimSnack", "StealSnack", "LockBase", "BuySlot", "Rebirth", "StateUpdate", "Notify" }
+
+local world
+local plots = {}
+local chevrons = {}
+local waveWall: Part
+local snacksFolder: Folder
 local remotes = {}
-local playerData = {} -- [Player] = player record
-local snacks = {} -- [id] = snack record
+
 local nextSnackId = 1
-local nextPlotIndex = 1
-local snackFolder
+local snacks = {} -- [id] = snack record
+local playerData = {} -- [Player] = record
+local takenPlots = {} -- [plotIndex] = Player
 
--- Wave state machine: idle -> warning (30s) -> active (20s) -> idle ...
-local wave = {
-	state = "idle",
-	nextWarningAt = 0,
-	warningEndsAt = 0,
-	activeEndsAt = 0,
-	activeStartedAt = 0,
-}
+local waveState = "idle" -- idle | warning | active
+local waveEndsAt = 0
+local waveForce = false
 
-local function now()
-	return workspace:GetServerTimeNow()
+local function now(): number
+	return Workspace:GetServerTimeNow()
 end
 
-local function isInsideRect(pos, rect)
-	return pos.X >= rect.minX and pos.X <= rect.maxX and pos.Z >= rect.minZ and pos.Z <= rect.maxZ
-end
-
-local function countSlots(pdata)
-	local used = 0
-	for i = 1, pdata.maxSlots do
-		if pdata.slots[i] then
-			used += 1
+local function notify(player: Player?, kind: string, text: string)
+	if player then
+		remotes.Notify:FireClient(player, kind, text)
+	else
+		for _, p in ipairs(Players:GetPlayers()) do
+			remotes.Notify:FireClient(p, kind, text)
 		end
 	end
-	return used
 end
 
-local function freeSlotIndex(pdata)
-	for i = 1, pdata.maxSlots do
-		if not pdata.slots[i] then
+local function freeSlotIndex(data): number?
+	for i = 1, data.slotsMax do
+		if data.slots[i] == nil then
 			return i
 		end
 	end
 	return nil
 end
 
-local function incomePerSecond(pdata)
+local function countSlotted(data): number
+	local n = 0
+	for _, id in pairs(data.slots) do
+		if id ~= nil then
+			n += 1
+		end
+	end
+	return n
+end
+
+local function incomePerSecond(data): number
 	local total = 0
-	for i = 1, pdata.maxSlots do
-		local snackId = pdata.slots[i]
-		if snackId and snacks[snackId] then
-			total += snacks[snackId].income
+	for _, id in pairs(data.slots) do
+		local snack = snacks[id]
+		if snack then
+			total += Config.snackIncome(snack.character, snack.mutation)
 		end
 	end
-	return total * Config.rebirthMultiplier(pdata.rebirths)
+	return total * Config.rebirthMultiplier(data.rebirths)
 end
 
-local function lockStatus(pdata)
-	local t = now()
-	if t < pdata.lockedUntil then
-		return "locked", math.ceil(pdata.lockedUntil - t)
-	elseif t < pdata.lockCooldownUntil then
-		return "cooldown", math.ceil(pdata.lockCooldownUntil - t)
-	else
-		return "ready", 0
+local function isInsideBase(player: Player, position: Vector3): boolean
+	local data = playerData[player]
+	if not data or not data.plotIndex then
+		return false
 	end
+	local centre = plots[data.plotIndex].centre
+	return math.abs(position.X - centre.X) < 13 and math.abs(position.Z - centre.Z) < 13
 end
 
-local function waveStatus()
-	local t = now()
-	if wave.state == "warning" then
-		return "warning", math.max(0, math.ceil(wave.warningEndsAt - t))
-	elseif wave.state == "active" then
-		return "active", math.max(0, math.ceil(wave.activeEndsAt - t))
-	else
-		return "idle", math.max(0, math.ceil(wave.nextWarningAt - t))
+local function rootPartOf(player: Player): BasePart?
+	local character = player.Character
+	if not character then
+		return nil
 	end
+	return character:FindFirstChild("HumanoidRootPart") :: BasePart?
 end
 
-local function sendState(player)
-	local pdata = playerData[player]
-	if not pdata then
-		return
+local function distanceTo(player: Player, position: Vector3): number
+	local root = rootPartOf(player)
+	if not root then
+		return math.huge
 	end
-	local lockState, lockSeconds = lockStatus(pdata)
-	local waveState, waveSeconds = waveStatus()
-	local carryingName = ""
-	if pdata.carryingId and snacks[pdata.carryingId] then
-		carryingName = snacks[pdata.carryingId].def.name
-	end
-	remotes.StateUpdate:FireClient(player, {
-		cash = math.floor(pdata.cash),
-		income = incomePerSecond(pdata),
-		rebirths = pdata.rebirths,
-		multiplier = Config.rebirthMultiplier(pdata.rebirths),
-		slotsUsed = countSlots(pdata),
-		slotsMax = pdata.maxSlots,
-		slotCost = Config.slotCost(pdata.maxSlots),
-		rebirthCost = Config.rebirthCost(pdata.rebirths),
-		lock = lockState,
-		lockSeconds = lockSeconds,
-		carrying = carryingName,
-		wave = waveState,
-		waveSeconds = waveSeconds,
-		hasPlot = pdata.plotIndex ~= nil,
-		plot = pdata.plotIndex or 0,
-	})
+	return (root.Position - position).Magnitude
 end
 
-local function broadcastState()
-	for player, _ in pairs(playerData) do
-		sendState(player)
-	end
-end
+-- Snacks ---------------------------------------------------------------------
 
-local function notify(player, message, kind)
-	remotes.Notify:FireClient(player, message, kind or "info")
-end
-
-local function notifyAll(message, kind)
-	remotes.Notify:FireAllClients(message, kind or "info")
-end
-
--- The client reads these attributes to show its claim/steal prompt.
-local function syncSnackAttributes(snack)
-	if snack.model and snack.model.Parent then
-		snack.model:SetAttribute("SnackState", snack.state)
-		snack.model:SetAttribute("SnackOwner", snack.owner and snack.owner.UserId or 0)
-		snack.model:SetAttribute("SnackId", snack.id)
-	end
-end
-
--- Moves a snack model along a straight path over `duration` seconds, with a
--- small hop, then calls onArrive. Runs in its own thread; the snack's state
--- is "walking" while it travels so the belt loop leaves it alone.
-local function walkSnackTo(snack, targetPos, onArrive)
-	task.spawn(function()
-		local model = snack.model
-		if not model or not model.Parent then
-			return
-		end
-		local from = model:GetPivot().Position
-		local distance = (targetPos - from).Magnitude
-		local duration = math.clamp(distance / 14, 0.5, 4)
-		local startedAt = os.clock()
-		while true do
-			local elapsed = os.clock() - startedAt
-			local alpha = math.clamp(elapsed / duration, 0, 1)
-			local pos = from:Lerp(targetPos, alpha)
-			pos += Vector3.new(0, math.abs(math.sin(alpha * math.pi)) * 1.2, 0)
-			if not model.Parent then
-				return
-			end
-			model:PivotTo(CFrame.new(pos))
-			if alpha >= 1 then
-				break
-			end
-			task.wait(0.03)
-		end
-		if onArrive then
-			onArrive()
-		end
-	end)
-end
-
-local function despawnSnack(snack)
-	snacks[snack.id] = nil
-	if snack.model and snack.model.Parent then
-		snack.model:Destroy()
-	end
-end
-
-local function dropCarried(player)
-	local pdata = playerData[player]
-	if not pdata or not pdata.carryingId then
-		return
-	end
-	local snack = snacks[pdata.carryingId]
-	pdata.carryingId = nil
-	if not snack then
-		return
-	end
-	-- The dropped snack hops back onto the conveyor at the start of the belt.
+local function returnSnackToBelt(snack)
 	snack.state = "conveyor"
 	snack.owner = nil
 	snack.slotIndex = nil
-	snack.beltX = Config.BELT_MIN_X
-	syncSnackAttributes(snack)
-	if snack.model and snack.model.Parent then
-		snack.model:PivotTo(CFrame.new(Config.BELT_MIN_X, Config.BELT_Y, Config.BELT_Z))
-	end
+	snack.protectUntil = 0
+	snack.model:SetAttribute("state", "conveyor")
+	snack.model:SetAttribute("ownerUserId", 0)
+	snack.model:PivotTo(CFrame.new(Config.CONVEYOR_START_X, Config.CONVEYOR_RIDE_HEIGHT, Config.CONVEYOR_Z))
 end
 
-local function spawnSnack(beltX)
-	local def = Config.rollCharacter()
+local function spawnSnack()
+	local beltCount = 0
+	for _, snack in pairs(snacks) do
+		if snack.state == "conveyor" then
+			beltCount += 1
+		end
+	end
+	if beltCount >= Config.CONVEYOR_MAX_SNACKS then
+		return
+	end
+	local character = Config.rollCharacter()
 	local mutation = Config.rollMutation()
-	local model = SnackFactory.buildSnackModel(def, mutation)
-	model.Name = "Snack_" .. tostring(nextSnackId)
-	model.Parent = snackFolder
-
+	local id = nextSnackId
+	nextSnackId += 1
+	local model = SnackFactory.build(character, mutation, id, Vector3.new(Config.CONVEYOR_START_X, Config.CONVEYOR_RIDE_HEIGHT, Config.CONVEYOR_Z))
+	model.Parent = snacksFolder
 	local snack = {
-		id = nextSnackId,
-		def = def,
-		mutation = mutation,
-		income = def.income * mutation.multiplier,
+		id = id,
 		model = model,
+		character = character,
+		mutation = mutation,
 		state = "conveyor",
 		owner = nil,
 		slotIndex = nil,
 		protectUntil = 0,
-		beltX = beltX or Config.BELT_MIN_X,
+		walking = false,
 	}
-	nextSnackId += 1
-	snacks[snack.id] = snack
-	syncSnackAttributes(snack)
+	snacks[id] = snack
 
-	model:PivotTo(CFrame.new(snack.beltX, Config.BELT_Y, Config.BELT_Z))
-	local click = model.PrimaryPart:FindFirstChild("SnackClick")
-	if click then
-		click.MouseClick:Connect(function(player)
-			GameServer.onSnackClicked(player, snack)
+	local root = model.PrimaryPart :: BasePart
+	local detector = root:FindFirstChildOfClass("ClickDetector")
+	if detector then
+		detector.MouseClick:Connect(function(player: Player)
+			GameServer.handleClick(player, id)
 		end)
 	end
-	return snack
 end
 
-local function claimSnack(player, snack)
-	local pdata = playerData[player]
-	if not pdata or not pdata.plotIndex then
-		notify(player, "You need a base first!", "bad")
+-- Walks a snack toward a target with small hops, then calls onArrive.
+local function walkSnackTo(snack, target: Vector3, onArrive: () -> ())
+	if snack.walking then
 		return
+	end
+	snack.walking = true
+	snack.state = "walking"
+	snack.model:SetAttribute("state", "walking")
+	task.spawn(function()
+		local start = snack.model:GetPivot().Position
+		local distance = (target - start).Magnitude
+		local duration = math.clamp(distance / Config.WALK_SPEED, 0.5, 4)
+		local elapsed = 0
+		while elapsed < duration do
+			if not snack.model.Parent then
+				snack.walking = false
+				return
+			end
+			elapsed += task.wait(0.05)
+			local t = math.min(1, elapsed / duration)
+			local pos = start:Lerp(target, t)
+			local hop = math.abs(math.sin(t * math.pi * math.max(2, distance / 4))) * 0.8
+			snack.model:PivotTo(CFrame.new(pos + Vector3.new(0, hop, 0)))
+		end
+		snack.walking = false
+		onArrive()
+	end)
+end
+
+local function slotSnack(snack, player: Player, slotIndex: number)
+	local data = playerData[player]
+	if not data then
+		return
+	end
+	snack.state = "slotted"
+	snack.owner = player
+	snack.slotIndex = slotIndex
+	data.slots[slotIndex] = snack.id
+	snack.model:SetAttribute("state", "slotted")
+	snack.model:SetAttribute("ownerUserId", player.UserId)
+	snack.model:PivotTo(CFrame.new(plots[data.plotIndex].slots[slotIndex]))
+end
+
+-- Claiming ---------------------------------------------------------------------
+
+function GameServer.claimSnack(player: Player, snackId: number): boolean
+	local snack = snacks[snackId]
+	local data = playerData[player]
+	if not snack or not data or not data.plotIndex then
+		return false
 	end
 	if snack.state ~= "conveyor" then
-		return
+		return false
 	end
-	local character = player.Character
-	local root = character and character:FindFirstChild("HumanoidRootPart")
-	if not root or (root.Position - snack.model:GetPivot().Position).Magnitude > 14 then
-		notify(player, "Get closer to the snack first!", "bad")
-		return
-	end
-	local slotIndex = freeSlotIndex(pdata)
+	local slotIndex = freeSlotIndex(data)
 	if not slotIndex then
-		notify(player, "Your base is full! Buy a slot or rebirth.", "bad")
-		return
+		notify(player, "bad", "Your base is full! Buy a slot or rebirth.")
+		return false
+	end
+	-- The claimer must be close to the belt snack: the click and the E
+	-- key both reach the server, so range is re-checked here, not trusted
+	-- from the client.
+	local root = snack.model.PrimaryPart :: BasePart
+	if distanceTo(player, root.Position) > Config.CLAIM_RANGE then
+		return false
 	end
 	snack.state = "walking"
-	snack.owner = player
-	snack.slotIndex = slotIndex
-	syncSnackAttributes(snack)
-	pdata.slots[slotIndex] = snack.id
-	local plot = layout.plots[pdata.plotIndex]
-	local target = plot.slots[slotIndex]
-	notify(player, "Claimed " .. snack.def.name .. "! It is waddling to your base.", "good")
+	snack.model:SetAttribute("state", "walking")
+	local target = plots[data.plotIndex].slots[slotIndex]
 	walkSnackTo(snack, target, function()
-		if snacks[snack.id] then
-			if not playerData[player] then
-				-- The claimer left mid-walk: the snack hops back on the belt.
-				snack.state = "conveyor"
-				snack.owner = nil
-				snack.slotIndex = nil
-				snack.beltX = Config.BELT_MIN_X
-				syncSnackAttributes(snack)
-				snack.model:PivotTo(CFrame.new(Config.BELT_MIN_X, Config.BELT_Y, Config.BELT_Z))
-			else
-				snack.state = "slotted"
-				syncSnackAttributes(snack)
-				sendState(player)
-			end
+		if not player.Parent then
+			returnSnackToBelt(snack)
+			return
 		end
+		slotSnack(snack, player, slotIndex)
+		notify(player, "good", "Claimed " .. snack.character.name .. "! It now earns $" .. tostring(Config.snackIncome(snack.character, snack.mutation)) .. "/s.")
 	end)
-	sendState(player)
+	return true
 end
 
-local function stealSnack(player, snack)
-	local pdata = playerData[player]
-	if not pdata or not pdata.plotIndex then
-		return
+-- Stealing ---------------------------------------------------------------------
+
+function GameServer.stealSnack(player: Player, snackId: number): boolean
+	local snack = snacks[snackId]
+	local data = playerData[player]
+	if not snack or not data or not data.plotIndex then
+		return false
 	end
-	if snack.state ~= "slotted" or snack.owner == player then
-		return
+	if snack.state ~= "slotted" or not snack.owner or snack.owner == player then
+		return false
 	end
+	local victimData = playerData[snack.owner]
+	if victimData and victimData.lockUntil > now() then
+		notify(player, "bad", "That base is locked!")
+		return false
+	end
+	if snack.protectUntil > now() then
+		notify(player, "bad", "That snack is protected for a few more seconds.")
+		return false
+	end
+	if data.carrying ~= nil then
+		notify(player, "bad", "You are already carrying a snack!")
+		return false
+	end
+	if not freeSlotIndex(data) then
+		notify(player, "bad", "Your base is full! Buy a slot or rebirth.")
+		return false
+	end
+	local root = snack.model.PrimaryPart :: BasePart
+	if distanceTo(player, root.Position) > Config.CLAIM_RANGE then
+		return false
+	end
+	-- Lift it off the victim's base onto the thief's head. Keep the victim
+	-- in a local first: snack.owner is reassigned below, so notifying
+	-- snack.owner afterwards would warn the thief instead of the victim.
 	local victim = snack.owner
-	local victimData = playerData[victim]
-	if not victimData then
-		return
+	if victimData and snack.slotIndex then
+		victimData.slots[snack.slotIndex] = nil
 	end
-	local victimLock = lockStatus(victimData)
-	if victimLock == "locked" then
-		notify(player, victim.Name .. "'s base is locked!", "bad")
-		return
-	end
-	if now() < snack.protectUntil then
-		notify(player, snack.def.name .. " is protected from stealing right now.", "bad")
-		return
-	end
-	if pdata.carryingId then
-		notify(player, "You are already carrying a snack!", "bad")
-		return
-	end
-	local character = player.Character
-	local root = character and character:FindFirstChild("HumanoidRootPart")
-	if not root or (root.Position - snack.model:GetPivot().Position).Magnitude > 14 then
-		notify(player, "Get closer to the snack first!", "bad")
-		return
-	end
-	if not freeSlotIndex(pdata) then
-		notify(player, "Your base is full! Buy a slot or rebirth.", "bad")
-		return
-	end
-	-- Lift it off the victim's base and onto the thief's head.
-	victimData.slots[snack.slotIndex] = nil
 	snack.state = "carried"
-	snack.owner = nil
-	snack.slotIndex = nil
-	syncSnackAttributes(snack)
-	pdata.carryingId = snack.id
-	notify(player, "You stole " .. snack.def.name .. "! Run it home to your base!", "good")
-	notify(victim, player.Name .. " stole your " .. snack.def.name .. "! Chase them!", "bad")
-	sendState(player)
-	sendState(victim)
-end
-
-local function completeSteal(player, snack)
-	local pdata = playerData[player]
-	if not pdata or not pdata.plotIndex then
-		return
-	end
-	local slotIndex = freeSlotIndex(pdata)
-	if not slotIndex then
-		-- No room after all: send it back to the conveyor.
-		dropCarried(player)
-		return
-	end
-	pdata.carryingId = nil
-	snack.state = "walking"
 	snack.owner = player
-	snack.slotIndex = slotIndex
-	syncSnackAttributes(snack)
-	snack.protectUntil = now() + Config.STEAL_PROTECT_SECONDS
-	pdata.slots[slotIndex] = snack.id
-	local plot = layout.plots[pdata.plotIndex]
-	walkSnackTo(snack, plot.slots[slotIndex], function()
-		if snacks[snack.id] then
-			if not playerData[player] then
-				snack.state = "conveyor"
-				snack.owner = nil
-				snack.slotIndex = nil
-				snack.beltX = Config.BELT_MIN_X
-				syncSnackAttributes(snack)
-				snack.model:PivotTo(CFrame.new(Config.BELT_MIN_X, Config.BELT_Y, Config.BELT_Z))
-			else
-				snack.state = "slotted"
-				syncSnackAttributes(snack)
-				sendState(player)
-			end
-		end
+	snack.slotIndex = nil
+	snack.model:SetAttribute("state", "carried")
+	snack.model:SetAttribute("ownerUserId", player.UserId)
+	data.carrying = snack.id
+	notify(player, "good", "Stolen! Run it home to your base!")
+	if victim and victim ~= player then
+		notify(victim, "bad", player.Name .. " stole your " .. snack.character.name .. "!")
+	end
+	return true
+end
+
+function GameServer.completeSteal(player: Player)
+	local data = playerData[player]
+	if not data or not data.carrying then
+		return
+	end
+	local snack = snacks[data.carrying]
+	if not snack then
+		data.carrying = nil
+		return
+	end
+	local slotIndex = freeSlotIndex(data)
+	if not slotIndex then
+		returnSnackToBelt(snack)
+		data.carrying = nil
+		return
+	end
+	data.carrying = nil
+	snack.protectUntil = now() + Config.STEAL_PROTECTION_SECONDS
+	local target = plots[data.plotIndex].slots[slotIndex]
+	walkSnackTo(snack, target, function()
+		slotSnack(snack, player, slotIndex)
+		notify(player, "good", "Steal complete! " .. snack.character.name .. " is yours now.")
 	end)
-	notify(player, snack.def.name .. " is yours now! Protected from stealing for 30s.", "good")
-	sendState(player)
 end
 
-local function lockBase(player)
-	local pdata = playerData[player]
-	if not pdata or not pdata.plotIndex then
+function GameServer.dropCarried(player: Player)
+	local data = playerData[player]
+	if not data or not data.carrying then
 		return
 	end
-	local state, seconds = lockStatus(pdata)
-	if state == "locked" then
-		notify(player, "Your base is already locked for " .. tostring(seconds) .. "s.", "info")
-		return
-	elseif state == "cooldown" then
-		notify(player, "Lock is cooling down: " .. tostring(seconds) .. "s left.", "info")
-		return
+	local snack = snacks[data.carrying]
+	data.carrying = nil
+	if snack then
+		returnSnackToBelt(snack)
 	end
-	pdata.lockedUntil = now() + Config.LOCK_SECONDS
-	pdata.lockCooldownUntil = now() + Config.LOCK_SECONDS + Config.LOCK_COOLDOWN_SECONDS
-	notify(player, "Base locked for 60s! Nobody can steal from you.", "good")
-	sendState(player)
 end
 
-local function buySlot(player)
-	local pdata = playerData[player]
-	if not pdata or not pdata.plotIndex then
-		return
-	end
-	if pdata.maxSlots >= Config.MAX_SLOTS then
-		notify(player, "Your base already has the maximum slots.", "info")
-		return
-	end
-	local cost = Config.slotCost(pdata.maxSlots)
-	if pdata.cash < cost then
-		notify(player, "A new slot costs $" .. tostring(cost) .. ". You have $" .. tostring(math.floor(pdata.cash)) .. ".", "bad")
-		return
-	end
-	pdata.cash -= cost
-	pdata.maxSlots += 1
-	notify(player, "New base slot bought! You now have " .. tostring(pdata.maxSlots) .. " slots.", "good")
-	sendState(player)
-end
-
-local function rebirth(player)
-	local pdata = playerData[player]
-	if not pdata or not pdata.plotIndex then
-		return
-	end
-	local cost = Config.rebirthCost(pdata.rebirths)
-	if pdata.cash < cost then
-		notify(player, "Rebirth costs $" .. tostring(cost) .. ". You have $" .. tostring(math.floor(pdata.cash)) .. ".", "bad")
-		return
-	end
-	pdata.cash = 0
-	pdata.rebirths += 1
-	if pdata.maxSlots < Config.MAX_SLOTS then
-		pdata.maxSlots += 1
-	end
-	notify(player, "REBIRTH! Earnings are now x" .. tostring(Config.rebirthMultiplier(pdata.rebirths)) .. " and you gained a slot.", "good")
-	sendState(player)
-end
-
--- Clicking a snack claims it from the belt or steals it from a base.
-function GameServer.onSnackClicked(player, snack)
-	if not snacks[snack.id] then
+-- Clicks (claim from the belt, steal from another base) -------------------------
+function GameServer.handleClick(player: Player, snackId: number)
+	local snack = snacks[snackId]
+	if not snack then
 		return
 	end
 	if snack.state == "conveyor" then
-		claimSnack(player, snack)
+		GameServer.claimSnack(player, snackId)
 	elseif snack.state == "slotted" then
-		stealSnack(player, snack)
+		GameServer.stealSnack(player, snackId)
 	end
 end
 
-local function teleportToSpawn(player)
-	local pdata = playerData[player]
-	local character = player.Character
-	if not pdata or not pdata.plotIndex or not character then
-		return
+-- Lock, slots, rebirth -----------------------------------------------------------
+
+function GameServer.lockBase(player: Player): boolean
+	local data = playerData[player]
+	if not data or not data.plotIndex then
+		return false
 	end
-	local root = character:WaitForChild("HumanoidRootPart", 5)
-	if not root then
-		return
+	local t = now()
+	if data.lockUntil > t then
+		return false
 	end
-	local plot = layout.plots[pdata.plotIndex]
-	character:PivotTo(CFrame.new(plot.spawn + Vector3.new(0, 3, 0)))
-	root.AssemblyLinearVelocity = Vector3.zero
-	root.AssemblyAngularVelocity = Vector3.zero
+	if data.lockCooldownUntil > t then
+		notify(player, "bad", "Lock is cooling down for " .. tostring(math.floor(data.lockCooldownUntil - t)) .. "s.")
+		return false
+	end
+	data.lockUntil = t + Config.LOCK_DURATION
+	data.lockCooldownUntil = data.lockUntil + Config.LOCK_COOLDOWN
+	notify(player, "good", "Base locked for 60 seconds!")
+	return true
 end
 
-local function setupPlayer(player)
-	local plotIndex = nil
-	if nextPlotIndex <= #layout.plots then
-		plotIndex = nextPlotIndex
-		nextPlotIndex += 1
+function GameServer.buySlot(player: Player): boolean
+	local data = playerData[player]
+	if not data then
+		return false
 	end
+	if data.slotsMax >= Config.MAX_SLOTS then
+		notify(player, "bad", "You already have the maximum 10 slots.")
+		return false
+	end
+	local cost = Config.slotCost(data.slotsMax)
+	if data.cash < cost then
+		notify(player, "bad", "Need $" .. tostring(cost) .. " for a new slot.")
+		return false
+	end
+	data.cash -= cost
+	data.slotsMax += 1
+	notify(player, "good", "New slot unlocked! You now have " .. tostring(data.slotsMax) .. " slots.")
+	return true
+end
+
+function GameServer.rebirth(player: Player): boolean
+	local data = playerData[player]
+	if not data then
+		return false
+	end
+	local cost = Config.rebirthCost(data.rebirths)
+	if data.cash < cost then
+		notify(player, "bad", "Rebirth needs $" .. tostring(cost) .. ".")
+		return false
+	end
+	data.cash = 0
+	data.rebirths += 1
+	data.slotsMax = math.min(Config.MAX_SLOTS, data.slotsMax + 1)
+	notify(nil, "info", player.Name .. " rebirthed! Earnings x" .. tostring(Config.rebirthMultiplier(data.rebirths)) .. " forever.")
+	return true
+end
+
+-- Wave -----------------------------------------------------------------------------
+function GameServer.startWaveNow(): boolean
+	if waveState ~= "idle" then
+		return false
+	end
+	waveForce = true
+	return true
+end
+
+local function waveLoop()
+	task.wait(Config.WAVE_FIRST_WARNING_DELAY)
+	while true do
+		-- Idle until the next warning (or a forced start from the tour).
+		local idleLeft = Config.WAVE_CYCLE_SECONDS - Config.WAVE_WARNING_SECONDS - Config.WAVE_ACTIVE_SECONDS
+		local waited = 0
+		while waited < idleLeft and not waveForce do
+			task.wait(1)
+			waited += 1
+		end
+		waveForce = false
+		waveState = "warning"
+		waveEndsAt = now() + Config.WAVE_WARNING_SECONDS
+		notify(nil, "bad", "MIDNIGHT HUNGER WAVE IN 30 SECONDS! Get inside your base!")
+		task.wait(Config.WAVE_WARNING_SECONDS)
+		-- Sweep.
+		waveState = "active"
+		waveEndsAt = now() + Config.WAVE_ACTIVE_SECONDS
+		notify(nil, "bad", "THE WAVE IS SWEEPING! Run home!")
+		task.wait(Config.WAVE_ACTIVE_SECONDS)
+		waveState = "idle"
+		waveEndsAt = 0
+		if waveWall then
+			waveWall.Position = Vector3.new(Config.WAVE_PARK_X, 21, 0)
+		end
+	end
+end
+
+local function waveHeartbeat(dt: number)
+	if waveState == "active" and waveWall then
+		local remaining = waveEndsAt - now()
+		local progress = 1 - math.clamp(remaining / Config.WAVE_ACTIVE_SECONDS, 0, 1)
+		local x = Config.WAVE_START_X + (Config.WAVE_END_X - Config.WAVE_START_X) * progress
+		waveWall.Position = Vector3.new(x, 21, 0)
+		-- Anyone caught outside their own base is sent home and drops the catch.
+		for _, player in ipairs(Players:GetPlayers()) do
+			local root = rootPartOf(player)
+			if root and not isInsideBase(player, root.Position) then
+				local data = playerData[player]
+				if data and data.plotIndex then
+					GameServer.dropCarried(player)
+					root.CFrame = CFrame.new(plots[data.plotIndex].spawn + Vector3.new(0, 3, 0))
+					notify(player, "bad", "The wave caught you! Back to your base.")
+				end
+			end
+		end
+	end
+end
+
+-- Players ---------------------------------------------------------------------------
+
+local function givePlot(player: Player): number?
+	for i = 1, Config.PLOT_COUNT do
+		if not takenPlots[i] then
+			takenPlots[i] = player
+			return i
+		end
+	end
+	return nil
+end
+
+local function onPlayerAdded(player: Player)
+	local plotIndex = givePlot(player)
+	local data = {
+		plotIndex = plotIndex,
+		cash = 0,
+		rebirths = 0,
+		slotsMax = Config.START_SLOTS,
+		slots = {},
+		lockUntil = 0,
+		lockCooldownUntil = 0,
+		carrying = nil,
+	}
+	playerData[player] = data
 
 	local leaderstats = Instance.new("Folder")
 	leaderstats.Name = "leaderstats"
+	leaderstats.Parent = player
 	local cashValue = Instance.new("IntValue")
 	cashValue.Name = "Cash"
 	cashValue.Value = 0
@@ -476,286 +485,211 @@ local function setupPlayer(player)
 	rebirthValue.Name = "Rebirths"
 	rebirthValue.Value = 0
 	rebirthValue.Parent = leaderstats
-	leaderstats.Parent = player
-
-	playerData[player] = {
-		cash = 0,
-		rebirths = 0,
-		plotIndex = plotIndex,
-		slots = {},
-		maxSlots = Config.START_SLOTS,
-		lockedUntil = 0,
-		lockCooldownUntil = 0,
-		carryingId = nil,
-		cashValue = cashValue,
-		rebirthValue = rebirthValue,
-	}
+	data.cashValue = cashValue
+	data.rebirthValue = rebirthValue
 
 	if plotIndex then
-		notify(player, "Welcome to Steal a Snackrot! Grab snacks off the conveyor and fill your base.", "info")
-	else
-		notify(player, "All bases are taken — you are spectating this round.", "info")
-	end
-
-	player:LoadCharacter()
-	teleportToSpawn(player)
-	sendState(player)
-end
-
-local function removePlayer(player)
-	dropCarried(player)
-	-- A departed player's slotted snacks go back on the belt so they can be
-	-- claimed again instead of sitting locked on an empty base forever.
-	for _, snack in pairs(snacks) do
-		if snack.owner == player and snack.state == "slotted" then
-			local pdata = playerData[player]
-			if pdata and snack.slotIndex then
-				pdata.slots[snack.slotIndex] = nil
-			end
-			snack.state = "conveyor"
-			snack.owner = nil
-			snack.slotIndex = nil
-			snack.beltX = Config.BELT_MIN_X
-			syncSnackAttributes(snack)
-			if snack.model and snack.model.Parent then
-				snack.model:PivotTo(CFrame.new(Config.BELT_MIN_X, Config.BELT_Y, Config.BELT_Z))
-			end
-		end
-	end
-	playerData[player] = nil
-end
-
--- Every character a player spawns with gets its death handler here, so a
--- respawned character is covered too (not just the first one).
-local function onCharacterAdded(player, character)
-	local humanoid = character:WaitForChild("Humanoid", 5)
-	if humanoid then
-		humanoid.Died:Connect(function()
-			dropCarried(player)
-			task.wait(2)
-			if player.Parent then
-				player:LoadCharacter()
+		task.spawn(function()
+			player:LoadCharacter()
+			local character = player.Character or player.CharacterAdded:Wait()
+			local root = character:WaitForChild("HumanoidRootPart") :: BasePart
+			root.CFrame = CFrame.new(plots[plotIndex].spawn + Vector3.new(0, 3, 0))
+			local humanoid = character:FindFirstChildOfClass("Humanoid")
+			if humanoid then
+				humanoid.Died:Connect(function()
+					GameServer.dropCarried(player)
+				end)
 			end
 		end)
-	end
-	task.wait(0.2)
-	teleportToSpawn(player)
-end
-
--- Wave timing, driven from the one-second tick.
-local function updateWave()
-	local t = now()
-	if wave.state == "idle" then
-		if t >= wave.nextWarningAt then
-			wave.state = "warning"
-			wave.warningEndsAt = t + Config.WAVE_WARNING_SECONDS
-			notifyAll("MIDNIGHT HUNGER WAVE in 30 seconds! Get inside your base!", "bad")
-		end
-	elseif wave.state == "warning" then
-		if t >= wave.warningEndsAt then
-			wave.state = "active"
-			wave.activeStartedAt = t
-			wave.activeEndsAt = t + Config.WAVE_ACTIVE_SECONDS
-			notifyAll("THE HUNGER WAVE IS HERE! Stay inside your base!", "bad")
-		end
-	elseif wave.state == "active" then
-		if t >= wave.activeEndsAt then
-			wave.state = "idle"
-			wave.nextWarningAt = t + Config.WAVE_CYCLE_SECONDS - Config.WAVE_WARNING_SECONDS - Config.WAVE_ACTIVE_SECONDS
-			layout.waveWall.CFrame = CFrame.new(-300, 22, 10)
-			notifyAll("The wave has passed. Back to snacking!", "good")
-		end
+	else
+		task.spawn(function()
+			player:LoadCharacter()
+			notify(player, "info", "All bases are taken - you are spectating this round.")
+		end)
 	end
 end
 
--- While the wave is active, anyone outside their own base is swept home.
-local function waveKnockbackCheck()
-	if wave.state ~= "active" then
-		return
+local function onPlayerRemoving(player: Player)
+	local data = playerData[player]
+	if data then
+		GameServer.dropCarried(player)
+		-- Slotted snacks return to the belt so they can be claimed again.
+		for _, id in pairs(data.slots) do
+			local snack = snacks[id]
+			if snack then
+				returnSnackToBelt(snack)
+			end
+		end
+		if data.plotIndex then
+			takenPlots[data.plotIndex] = nil
+		end
+		playerData[player] = nil
 	end
-	for player, pdata in pairs(playerData) do
-		if pdata.plotIndex then
-			local character = player.Character
-			local root = character and character:FindFirstChild("HumanoidRootPart")
+end
+
+-- Loops ----------------------------------------------------------------------------
+
+local function broadcastState()
+	for player, data in pairs(playerData) do
+		local carryingName = nil
+		if data.carrying then
+			local snack = snacks[data.carrying]
+			if snack then
+				carryingName = snack.character.name
+			end
+		end
+		local t = now()
+		remotes.StateUpdate:FireClient(player, {
+			cash = math.floor(data.cash),
+			incomePerSecond = incomePerSecond(data),
+			rebirths = data.rebirths,
+			multiplier = Config.rebirthMultiplier(data.rebirths),
+			slotsUsed = countSlotted(data),
+			slotsMax = data.slotsMax,
+			nextSlotCost = Config.slotCost(data.slotsMax),
+			nextRebirthCost = Config.rebirthCost(data.rebirths),
+			lockActive = data.lockUntil > t,
+			lockSecondsLeft = math.max(0, math.floor(data.lockUntil - t)),
+			lockCooldownLeft = math.max(0, math.floor(data.lockCooldownUntil - t)),
+			carrying = carryingName,
+			waveState = waveState,
+			waveSeconds = math.max(0, math.floor(waveEndsAt - t)),
+			hasPlot = data.plotIndex ~= nil,
+			plotIndex = data.plotIndex or 0,
+		})
+	end
+end
+
+local function earningsLoop()
+	while true do
+		task.wait(1)
+		for player, data in pairs(playerData) do
+			local earned = incomePerSecond(data)
+			data.cash += earned
+			if data.cashValue then
+				data.cashValue.Value = math.floor(data.cash)
+			end
+			if data.rebirthValue then
+				data.rebirthValue.Value = data.rebirths
+			end
+		end
+		broadcastState()
+	end
+end
+
+local function spawnLoop()
+	while true do
+		task.wait(Config.CONVEYOR_SPAWN_INTERVAL)
+		spawnSnack()
+	end
+end
+
+local function heartbeat(dt: number)
+	-- Conveyor snacks ride east with a small bob.
+	for _, snack in pairs(snacks) do
+		if snack.state == "conveyor" then
+			local pos = snack.model:GetPivot().Position
+			local nextX = pos.X + Config.CONVEYOR_SPEED * dt
+			if nextX > Config.CONVEYOR_END_X then
+				snack.model:Destroy()
+				snacks[snack.id] = nil
+			else
+				local bob = math.sin(now() * 3 + snack.id) * 0.15
+				snack.model:PivotTo(CFrame.new(nextX, Config.CONVEYOR_RIDE_HEIGHT + bob, Config.CONVEYOR_Z))
+			end
+		elseif snack.state == "carried" and snack.owner then
+			local root = rootPartOf(snack.owner)
 			if root then
-				local plot = layout.plots[pdata.plotIndex]
-				if not isInsideRect(root.Position, plot.rect) then
-					dropCarried(player)
-					teleportToSpawn(player)
-					notify(player, "The Hunger Wave swept you back to your base!", "bad")
-				end
+				snack.model:PivotTo(CFrame.new(root.Position + Vector3.new(0, Config.CARRY_HEIGHT, 0)))
 			end
 		end
 	end
+	-- Chevrons slide along the belt.
+	for i, chevron in ipairs(chevrons) do
+		local pos = chevron.Position
+		local nextX = pos.X + Config.CONVEYOR_SPEED * dt
+		if nextX > Config.CONVEYOR_END_X then
+			nextX = Config.CONVEYOR_START_X + (nextX - Config.CONVEYOR_END_X)
+		end
+		chevron.Position = Vector3.new(nextX, pos.Y, pos.Z)
+	end
+	-- Carrying players who reach their own base complete the steal.
+	for player, data in pairs(playerData) do
+		if data.carrying then
+			local root = rootPartOf(player)
+			if root and isInsideBase(player, root.Position) then
+				GameServer.completeSteal(player)
+			end
+		end
+	end
+	waveHeartbeat(dt)
 end
 
--- TOUR.json calls this to bring the game to the wave screen for a screenshot.
-function GameServer.startWaveNow(_arg)
-	if wave.state == "idle" then
-		wave.nextWarningAt = now()
-	end
-	return true
-end
+-- Startup --------------------------------------------------------------------------
 
 function GameServer.start()
-	layout = MapBuilder.build()
+	local built = MapBuilder.build()
+	plots = built.plots
+	chevrons = built.chevrons
+	waveWall = built.waveWall
 
-	snackFolder = Instance.new("Folder")
-	snackFolder.Name = "Snacks"
-	snackFolder.Parent = workspace
+	snacksFolder = Instance.new("Folder")
+	snacksFolder.Name = "Snacks"
+	snacksFolder.Parent = Workspace
 
-	-- RemoteEvents: created here so the client can WaitForChild them.
-	local folder = Instance.new("Folder")
-	folder.Name = "SnackrotRemotes"
-	folder.Parent = ReplicatedStorage
-	local function remote(name)
-		local event = Instance.new("RemoteEvent")
-		event.Name = name
-		event.Parent = folder
-		remotes[name] = event
-		return event
+	local remotesFolder = Instance.new("Folder")
+	remotesFolder.Name = "SnackrotRemotes"
+	remotesFolder.Parent = ReplicatedStorage
+	for _, name in ipairs(REMOTE_NAMES) do
+		local remote = Instance.new("RemoteEvent")
+		remote.Name = name
+		remote.Parent = remotesFolder
+		remotes[name] = remote
 	end
-	remote("ClaimSnack")
-	remote("StealSnack")
-	remote("LockBase")
-	remote("BuySlot")
-	remote("Rebirth")
-	remote("StateUpdate")
-	remote("Notify")
 
-	remotes.ClaimSnack.OnServerEvent:Connect(function(player, snackId)
-		local snack = snacks[snackId]
-		if snack then
-			claimSnack(player, snack)
+	remotes.ClaimSnack.OnServerEvent:Connect(function(player: Player, snackId)
+		if typeof(snackId) == "number" then
+			GameServer.claimSnack(player, snackId)
 		end
 	end)
-	remotes.StealSnack.OnServerEvent:Connect(function(player, snackId)
-		local snack = snacks[snackId]
-		if snack then
-			stealSnack(player, snack)
+	remotes.StealSnack.OnServerEvent:Connect(function(player: Player, snackId)
+		if typeof(snackId) == "number" then
+			GameServer.stealSnack(player, snackId)
 		end
 	end)
-	remotes.LockBase.OnServerEvent:Connect(lockBase)
-	remotes.BuySlot.OnServerEvent:Connect(buySlot)
-	remotes.Rebirth.OnServerEvent:Connect(rebirth)
-
-	Players.PlayerAdded:Connect(function(player)
-		player.CharacterAdded:Connect(function(character)
-			onCharacterAdded(player, character)
-		end)
-		setupPlayer(player)
+	remotes.LockBase.OnServerEvent:Connect(function(player: Player)
+		GameServer.lockBase(player)
 	end)
-	Players.PlayerRemoving:Connect(removePlayer)
+	remotes.BuySlot.OnServerEvent:Connect(function(player: Player)
+		GameServer.buySlot(player)
+	end)
+	remotes.Rebirth.OnServerEvent:Connect(function(player: Player)
+		GameServer.rebirth(player)
+	end)
+
+	Players.PlayerAdded:Connect(onPlayerAdded)
+	Players.PlayerRemoving:Connect(onPlayerRemoving)
 	for _, player in ipairs(Players:GetPlayers()) do
-		player.CharacterAdded:Connect(function(character)
-			onCharacterAdded(player, character)
-		end)
-		setupPlayer(player)
+		onPlayerAdded(player)
 	end
 
-	wave.nextWarningAt = now() + Config.WAVE_FIRST_WARNING_AT
-
-	-- Seed the belt so the game opens with snacks already riding it.
-	spawnSnack(-80)
-	spawnSnack(-50)
-	spawnSnack(-20)
-
-	-- Per-frame movement: belt snacks, carried snacks, the wave wall.
-	RunService.Heartbeat:Connect(function(dt)
-		local t = now()
-		local toDespawn = {}
-		for _, snack in pairs(snacks) do
-			if snack.state == "conveyor" then
-				snack.beltX += Config.BELT_SPEED * dt
-				if snack.beltX > Config.BELT_MAX_X then
-					table.insert(toDespawn, snack)
-				elseif snack.model and snack.model.Parent then
-					local bob = math.sin(t * 3 + snack.id) * 0.15
-					snack.model:PivotTo(CFrame.new(snack.beltX, Config.BELT_Y + bob, Config.BELT_Z))
-				end
-			elseif snack.state == "carried" then
-				local carrier = nil
-				local carrierData = nil
-				for player, data in pairs(playerData) do
-					if data.carryingId == snack.id then
-						carrier = player
-						carrierData = data
-						break
-					end
-				end
-				if not carrier then
-					-- The carrier left the game; the snack hops back on the belt.
-					snack.state = "conveyor"
-					snack.owner = nil
-					snack.beltX = Config.BELT_MIN_X
-					syncSnackAttributes(snack)
-					if snack.model and snack.model.Parent then
-						snack.model:PivotTo(CFrame.new(Config.BELT_MIN_X, Config.BELT_Y, Config.BELT_Z))
-					end
-				else
-					local character = carrier.Character
-					local root = character and character:FindFirstChild("HumanoidRootPart")
-					if root then
-						snack.model:PivotTo(CFrame.new(root.Position + Vector3.new(0, Config.CARRY_HEIGHT, 0)))
-						-- Reaching your own base completes the steal.
-						if carrierData and carrierData.plotIndex then
-							local plot = layout.plots[carrierData.plotIndex]
-							if isInsideRect(root.Position, plot.rect) then
-								completeSteal(carrier, snack)
-							end
-						end
-					else
-						dropCarried(carrier)
-					end
-				end
-			end
+	-- Seed the belt with three snacks so the first players have something to grab.
+	for _ = 1, 3 do
+		spawnSnack()
+	end
+	-- Spread the seed snacks along the belt instead of stacking them.
+	local i = 0
+	for _, snack in pairs(snacks) do
+		if snack.state == "conveyor" then
+			i += 1
+			snack.model:PivotTo(CFrame.new(Config.CONVEYOR_START_X + (i - 1) * 30, Config.CONVEYOR_RIDE_HEIGHT, Config.CONVEYOR_Z))
 		end
-		for _, snack in ipairs(toDespawn) do
-			despawnSnack(snack)
-		end
-		if wave.state == "active" then
-			local progress = math.clamp((t - wave.activeStartedAt) / Config.WAVE_ACTIVE_SECONDS, 0, 1)
-			local wallX = -140 + progress * 280
-			layout.waveWall.CFrame = CFrame.new(wallX, 22, 10)
-		end
-	end)
+	end
 
-	-- One-second tick: earnings, wave timing, conveyor spawns, HUD refresh.
-	task.spawn(function()
-		local spawnTimer = 0
-		while true do
-			task.wait(1)
-			local t = now()
-
-			for player, pdata in pairs(playerData) do
-				local income = incomePerSecond(pdata)
-				if income > 0 then
-					pdata.cash += income
-				end
-				pdata.cashValue.Value = math.floor(pdata.cash)
-				pdata.rebirthValue.Value = pdata.rebirths
-			end
-
-			updateWave()
-
-			spawnTimer += 1
-			if spawnTimer >= Config.SPAWN_INTERVAL then
-				spawnTimer = 0
-				local onBelt = 0
-				for _, snack in pairs(snacks) do
-					if snack.state == "conveyor" then
-						onBelt += 1
-					end
-				end
-				if onBelt < Config.MAX_ON_BELT then
-					spawnSnack()
-				end
-			end
-
-			waveKnockbackCheck()
-			broadcastState()
-		end
-	end)
+	RunService.Heartbeat:Connect(heartbeat)
+	task.spawn(earningsLoop)
+	task.spawn(spawnLoop)
+	task.spawn(waveLoop)
 end
 
 return GameServer
