@@ -1,5 +1,5 @@
 {
-  "name": "house-dodge",
+  "name": "steal-a-snackrot",
   "tree": {
     "$className": "DataModel",
     "Players": {
