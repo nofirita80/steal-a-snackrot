@@ -1,8 +1,8 @@
 # Steal a Snackrot
 
-[![make.fun bounty](https://make.fun/badge/roblox-brainrot-01/bounty)](https://make.fun/bounty/roblox-brainrot-01)
-[![make.fun rank](https://make.fun/badge/roblox-brainrot-01/rank/nofirita80/steal-a-snackrot)](https://make.fun/bounty/roblox-brainrot-01/leaderboard)
-[![make.fun reward](https://make.fun/badge/roblox-brainrot-01/reward/nofirita80/steal-a-snackrot)](https://make.fun/bounty/roblox-brainrot-01)
+[![make.fun · roblox-brainrot-01](https://make.fun/badge/roblox-brainrot-01.svg)](https://make.fun/bounty/roblox-brainrot-01?utm_source=github&utm_medium=readme&utm_campaign=roblox-brainrot-01)
+[![rank](https://make.fun/badge/roblox-brainrot-01/nofirita80/steal-a-snackrot/rank.svg)](https://make.fun/bounty/roblox-brainrot-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=roblox-brainrot-01)
+[![reward](https://make.fun/badge/roblox-brainrot-01/nofirita80/steal-a-snackrot/reward.svg)](https://make.fun/bounty/roblox-brainrot-01?utm_source=github&utm_medium=readme&utm_campaign=roblox-brainrot-01)
 
 A 3D Roblox brainrot collector game built for the make.fun bounty (roblox-brainrot-01, $1,000 USDC). You play in a giant kitchen, grab absurd snack characters off a moving conveyor, keep them on your base so they earn cash every second, steal from other players, lock your base, rebirth for double earnings, and run home when the Midnight Hunger Wave sweeps the kitchen.
 
