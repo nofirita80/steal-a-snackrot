@@ -1,11 +1,11 @@
--- Steal a Snackrot: Config
--- The single source of truth for every number the game runs on. The server
--- and the snack factory both read from here, so a label and the earnings
--- loop can never disagree about what a snack is worth.
+-- Steal a Snackrot — Config
+-- Every number the game runs on lives here, in one place. The server
+-- and the snack factory both read this module, so the price a player
+-- is shown and the price the server charges can never drift apart.
 
 local Config = {}
 
--- Bases -----------------------------------------------------------------
+-- ---------------------------------------------------------------- bases
 Config.PLOT_COUNT = 6
 Config.START_SLOTS = 3
 Config.MAX_SLOTS = 10
@@ -13,14 +13,16 @@ Config.PLOT_RADIUS = 55
 Config.PLOT_CENTRE = Vector3.new(0, 0, 20)
 Config.PLOT_SIZE = 26
 
--- A new slot costs 500 * 2 ^ (slotsOwned - 3): the 4th slot is 1000,
--- the 5th 2000, and so on up to the 10-slot cap.
+-- A new slot costs 500 * 2 ^ (slots owned - 3). The 4th slot is $1,000,
+-- the 5th $2,000, doubling up to the 10-slot cap.
 function Config.slotCost(slotsOwned: number): number
-	return 500 * (2 ^ math.max(0, slotsOwned - Config.START_SLOTS))
+	local extra = math.max(0, slotsOwned - Config.START_SLOTS)
+	return 500 * (2 ^ extra)
 end
 
--- Rebirth ----------------------------------------------------------------
--- A rebirth costs 10000 * 2 ^ rebirthsSoFar and doubles all earnings.
+-- ---------------------------------------------------------------- rebirth
+-- A rebirth costs 10,000 * 2 ^ rebirths so far, and doubles all
+-- earnings from then on.
 function Config.rebirthCost(rebirths: number): number
 	return 10000 * (2 ^ rebirths)
 end
@@ -29,7 +31,7 @@ function Config.rebirthMultiplier(rebirths: number): number
 	return 2 ^ rebirths
 end
 
--- Conveyor ----------------------------------------------------------------
+-- ---------------------------------------------------------------- conveyor
 Config.CONVEYOR_SPAWN_INTERVAL = 5
 Config.CONVEYOR_MAX_SNACKS = 8
 Config.CONVEYOR_SPEED = 6
@@ -43,11 +45,11 @@ Config.STEAL_PROTECTION_SECONDS = 30
 Config.CARRY_HEIGHT = 4.5
 Config.WALK_SPEED = 14
 
--- Base lock ---------------------------------------------------------------
+-- ---------------------------------------------------------------- base lock
 Config.LOCK_DURATION = 60
 Config.LOCK_COOLDOWN = 120
 
--- Midnight Hunger Wave ----------------------------------------------------
+-- ---------------------------------------------------------------- Midnight Hunger Wave
 Config.WAVE_FIRST_WARNING_DELAY = 180
 Config.WAVE_WARNING_SECONDS = 30
 Config.WAVE_ACTIVE_SECONDS = 20
@@ -56,7 +58,7 @@ Config.WAVE_START_X = -140
 Config.WAVE_END_X = 140
 Config.WAVE_PARK_X = -300
 
--- Rarities -----------------------------------------------------------------
+-- ---------------------------------------------------------------- rarities
 Config.RARITY_ORDER = { "Common", "Rare", "Epic", "Legendary", "Mythic", "Secret" }
 
 Config.RARITY_WEIGHTS = {
@@ -77,8 +79,8 @@ Config.RARITY_COLORS = {
 	Secret = Color3.fromRGB(255, 230, 60),
 }
 
--- Mutations -----------------------------------------------------------------
--- weight, income multiplier, aura colour
+-- ---------------------------------------------------------------- mutations
+-- Each entry: its weight in the roll, its income multiplier, its aura colour.
 Config.MUTATIONS = {
 	{ name = "None", weight = 70, multiplier = 1, color = Color3.fromRGB(255, 255, 255) },
 	{ name = "Golden", weight = 15, multiplier = 2, color = Color3.fromRGB(255, 200, 40) },
@@ -87,17 +89,24 @@ Config.MUTATIONS = {
 	{ name = "Void", weight = 2, multiplier = 25, color = Color3.fromRGB(140, 60, 220) },
 }
 
--- Weighted rolls -------------------------------------------------------------
-local function rollWeighted(entries: { { name: string, weight: number } }): string
+-- ---------------------------------------------------------------- weighted rolls
+-- One shared picker: add up the weights, roll inside the total, walk
+-- the list until the running sum passes the roll.
+local function totalWeight(entries: { { name: string, weight: number } }): number
 	local total = 0
-	for _, entry in ipairs(entries) do
+	for _, entry in entries do
 		total += entry.weight
 	end
-	local pick = math.random(1, total)
+	return total
+end
+
+local function pickWeighted(entries: { { name: string, weight: number } }): string
+	local total = totalWeight(entries)
+	local roll = math.random(1, total)
 	local running = 0
-	for _, entry in ipairs(entries) do
+	for _, entry in entries do
 		running += entry.weight
-		if pick <= running then
+		if roll <= running then
 			return entry.name
 		end
 	end
@@ -106,31 +115,27 @@ end
 
 function Config.rollRarity(): string
 	local entries = {}
-	for _, name in ipairs(Config.RARITY_ORDER) do
+	for _, name in Config.RARITY_ORDER do
 		table.insert(entries, { name = name, weight = Config.RARITY_WEIGHTS[name] })
 	end
-	return rollWeighted(entries)
+	return pickWeighted(entries)
 end
 
 function Config.rollMutation(): { name: string, multiplier: number, color: Color3 }
-	local total = 0
-	for _, entry in ipairs(Config.MUTATIONS) do
-		total += entry.weight
-	end
-	local pick = math.random(1, total)
+	local roll = math.random(1, totalWeight(Config.MUTATIONS))
 	local running = 0
-	for _, entry in ipairs(Config.MUTATIONS) do
+	for _, entry in Config.MUTATIONS do
 		running += entry.weight
-		if pick <= running then
+		if roll <= running then
 			return entry
 		end
 	end
 	return Config.MUTATIONS[1]
 end
 
--- The cast -------------------------------------------------------------------
--- Twelve original snack characters, each with a rarity and a base income.
--- shape is a hint the factory uses to pick its silhouette builder.
+-- ---------------------------------------------------------------- the cast
+-- Twelve original snack characters. `shape` tells the factory which
+-- silhouette builder to use; `income` is the base $/s before mutation.
 Config.CHARACTERS = {
 	{ name = "Sir Crunch Toast", rarity = "Common", income = 5, shape = "toast" },
 	{ name = "Baron Pickle", rarity = "Common", income = 8, shape = "pickle" },
@@ -148,7 +153,7 @@ Config.CHARACTERS = {
 
 function Config.charactersOfRarity(rarity: string): { { name: string, rarity: string, income: number, shape: string } }
 	local out = {}
-	for _, char in ipairs(Config.CHARACTERS) do
+	for _, char in Config.CHARACTERS do
 		if char.rarity == rarity then
 			table.insert(out, char)
 		end
@@ -162,15 +167,15 @@ function Config.rollCharacter(): { name: string, rarity: string, income: number,
 	return pool[math.random(1, #pool)]
 end
 
--- Income of one snack: character income times mutation multiplier.
--- Both the floating label and the earnings loop call this, so the number
--- a player sees is always the number they are paid.
+-- One snack's income: character income times the mutation multiplier.
+-- The floating label and the earnings loop both call this, so the
+-- number a player sees is always the number they are paid.
 function Config.snackIncome(character: { income: number }, mutation: { multiplier: number }): number
 	return character.income * mutation.multiplier
 end
 
 function Config.mutationByName(name: string): { name: string, multiplier: number, color: Color3 }
-	for _, entry in ipairs(Config.MUTATIONS) do
+	for _, entry in Config.MUTATIONS do
 		if entry.name == name then
 			return entry
 		end

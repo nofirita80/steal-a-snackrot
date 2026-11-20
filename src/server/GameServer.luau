@@ -1,4 +1,4 @@
--- Steal a Snackrot: GameServer
+-- Steal a Snackrot — GameServer
 -- Owns all game state: players, snacks and the Midnight Hunger Wave.
 -- The client only asks; every rule is validated here, server-side.
 
@@ -15,7 +15,6 @@ local GameServer = {}
 
 local REMOTE_NAMES = { "ClaimSnack", "StealSnack", "LockBase", "BuySlot", "Rebirth", "StateUpdate", "Notify" }
 
-local world
 local plots = {}
 local chevrons = {}
 local waveWall: Part
@@ -45,6 +44,7 @@ local function notify(player: Player?, kind: string, text: string)
 	end
 end
 
+-- ---------------------------------------------------------------- player helpers
 local function freeSlotIndex(data): number?
 	for i = 1, data.slotsMax do
 		if data.slots[i] == nil then
@@ -100,8 +100,7 @@ local function distanceTo(player: Player, position: Vector3): number
 	return (root.Position - position).Magnitude
 end
 
--- Snacks ---------------------------------------------------------------------
-
+-- ---------------------------------------------------------------- snacks
 local function returnSnackToBelt(snack)
 	snack.state = "conveyor"
 	snack.owner = nil
@@ -193,8 +192,7 @@ local function slotSnack(snack, player: Player, slotIndex: number)
 	snack.model:PivotTo(CFrame.new(plots[data.plotIndex].slots[slotIndex]))
 end
 
--- Claiming ---------------------------------------------------------------------
-
+-- ---------------------------------------------------------------- claiming
 function GameServer.claimSnack(player: Player, snackId: number): boolean
 	local snack = snacks[snackId]
 	local data = playerData[player]
@@ -210,8 +208,8 @@ function GameServer.claimSnack(player: Player, snackId: number): boolean
 		return false
 	end
 	-- The claimer must be close to the belt snack: the click and the E
-	-- key both reach the server, so range is re-checked here, not trusted
-	-- from the client.
+	-- key both reach the server, so range is re-checked here, not
+	-- trusted from the client.
 	local root = snack.model.PrimaryPart :: BasePart
 	if distanceTo(player, root.Position) > Config.CLAIM_RANGE then
 		return false
@@ -230,8 +228,7 @@ function GameServer.claimSnack(player: Player, snackId: number): boolean
 	return true
 end
 
--- Stealing ---------------------------------------------------------------------
-
+-- ---------------------------------------------------------------- stealing
 function GameServer.stealSnack(player: Player, snackId: number): boolean
 	local snack = snacks[snackId]
 	local data = playerData[player]
@@ -262,9 +259,10 @@ function GameServer.stealSnack(player: Player, snackId: number): boolean
 	if distanceTo(player, root.Position) > Config.CLAIM_RANGE then
 		return false
 	end
-	-- Lift it off the victim's base onto the thief's head. Keep the victim
-	-- in a local first: snack.owner is reassigned below, so notifying
-	-- snack.owner afterwards would warn the thief instead of the victim.
+	-- Lift it off the victim's base onto the thief's head. Keep the
+	-- victim in a local first: snack.owner is reassigned below, so
+	-- notifying snack.owner afterwards would warn the thief instead
+	-- of the victim.
 	local victim = snack.owner
 	if victimData and snack.slotIndex then
 		victimData.slots[snack.slotIndex] = nil
@@ -319,7 +317,7 @@ function GameServer.dropCarried(player: Player)
 	end
 end
 
--- Clicks (claim from the belt, steal from another base) -------------------------
+-- Clicks: claim from the belt, steal from another base.
 function GameServer.handleClick(player: Player, snackId: number)
 	local snack = snacks[snackId]
 	if not snack then
@@ -332,8 +330,7 @@ function GameServer.handleClick(player: Player, snackId: number)
 	end
 end
 
--- Lock, slots, rebirth -----------------------------------------------------------
-
+-- ---------------------------------------------------------------- lock, slots, rebirth
 function GameServer.lockBase(player: Player): boolean
 	local data = playerData[player]
 	if not data or not data.plotIndex then
@@ -390,7 +387,7 @@ function GameServer.rebirth(player: Player): boolean
 	return true
 end
 
--- Wave -----------------------------------------------------------------------------
+-- ---------------------------------------------------------------- wave
 function GameServer.startWaveNow(): boolean
 	if waveState ~= "idle" then
 		return false
@@ -448,8 +445,7 @@ local function waveHeartbeat(dt: number)
 	end
 end
 
--- Players ---------------------------------------------------------------------------
-
+-- ---------------------------------------------------------------- players
 local function givePlot(player: Player): number?
 	for i = 1, Config.PLOT_COUNT do
 		if not takenPlots[i] then
@@ -527,36 +523,41 @@ local function onPlayerRemoving(player: Player)
 	end
 end
 
--- Loops ----------------------------------------------------------------------------
+-- ---------------------------------------------------------------- loops
+-- The state payload one player gets each second. Kept in one helper so
+-- the earnings loop and any future push can never disagree on a field.
+local function buildStatePayload(player: Player, data)
+	local carryingName = nil
+	if data.carrying then
+		local snack = snacks[data.carrying]
+		if snack then
+			carryingName = snack.character.name
+		end
+	end
+	local t = now()
+	return {
+		cash = math.floor(data.cash),
+		incomePerSecond = incomePerSecond(data),
+		rebirths = data.rebirths,
+		multiplier = Config.rebirthMultiplier(data.rebirths),
+		slotsUsed = countSlotted(data),
+		slotsMax = data.slotsMax,
+		nextSlotCost = Config.slotCost(data.slotsMax),
+		nextRebirthCost = Config.rebirthCost(data.rebirths),
+		lockActive = data.lockUntil > t,
+		lockSecondsLeft = math.max(0, math.floor(data.lockUntil - t)),
+		lockCooldownLeft = math.max(0, math.floor(data.lockCooldownUntil - t)),
+		carrying = carryingName,
+		waveState = waveState,
+		waveSeconds = math.max(0, math.floor(waveEndsAt - t)),
+		hasPlot = data.plotIndex ~= nil,
+		plotIndex = data.plotIndex or 0,
+	}
+end
 
 local function broadcastState()
 	for player, data in pairs(playerData) do
-		local carryingName = nil
-		if data.carrying then
-			local snack = snacks[data.carrying]
-			if snack then
-				carryingName = snack.character.name
-			end
-		end
-		local t = now()
-		remotes.StateUpdate:FireClient(player, {
-			cash = math.floor(data.cash),
-			incomePerSecond = incomePerSecond(data),
-			rebirths = data.rebirths,
-			multiplier = Config.rebirthMultiplier(data.rebirths),
-			slotsUsed = countSlotted(data),
-			slotsMax = data.slotsMax,
-			nextSlotCost = Config.slotCost(data.slotsMax),
-			nextRebirthCost = Config.rebirthCost(data.rebirths),
-			lockActive = data.lockUntil > t,
-			lockSecondsLeft = math.max(0, math.floor(data.lockUntil - t)),
-			lockCooldownLeft = math.max(0, math.floor(data.lockCooldownUntil - t)),
-			carrying = carryingName,
-			waveState = waveState,
-			waveSeconds = math.max(0, math.floor(waveEndsAt - t)),
-			hasPlot = data.plotIndex ~= nil,
-			plotIndex = data.plotIndex or 0,
-		})
+		remotes.StateUpdate:FireClient(player, buildStatePayload(player, data))
 	end
 end
 
@@ -625,8 +626,7 @@ local function heartbeat(dt: number)
 	waveHeartbeat(dt)
 end
 
--- Startup --------------------------------------------------------------------------
-
+-- ---------------------------------------------------------------- startup
 function GameServer.start()
 	local built = MapBuilder.build()
 	plots = built.plots

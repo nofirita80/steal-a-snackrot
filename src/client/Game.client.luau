@@ -1,9 +1,9 @@
--- Steal a Snackrot: client
--- Builds the ScreenGui over the 3D world: stats, leaderboard, wave banner,
--- toasts, action buttons, context prompt and the help panel. The client
--- only asks through RemoteEvents; the server decides everything.
--- Everything is kept clear of the top-left corner, where Roblox's own
--- menu buttons sit.
+-- Steal a Snackrot — client
+-- Builds the ScreenGui over the 3D world: stats, leaderboard, wave
+-- banner, toasts, action buttons, context prompt and the help panel.
+-- The client only asks through RemoteEvents; the server decides
+-- everything. Everything stays clear of the top-left corner, where
+-- Roblox's own menu buttons sit.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -85,14 +85,14 @@ local function makeButton(parent: Instance, name: string, text: string, size: UD
 	return button
 end
 
--- ScreenGui -------------------------------------------------------------------
+-- ---------------------------------------------------------------- ScreenGui
 local gui = Instance.new("ScreenGui")
 gui.Name = "SnackrotGui"
 gui.ResetOnSpawn = false
 gui.IgnoreGuiInset = true
 gui.Parent = player:WaitForChild("PlayerGui")
 
--- Top-right stats panel ---------------------------------------------------------
+-- Top-right stats panel
 local statsPanel = Instance.new("Frame")
 statsPanel.Name = "StatsPanel"
 statsPanel.Size = UDim2.new(0, 280, 0, 190)
@@ -112,7 +112,7 @@ local rebirthLabel = makeLabel(statsPanel, "Rebirths", "Rebirths: 0  (x1)", UDim
 local slotsLabel = makeLabel(statsPanel, "Slots", "Slots: 0/3", UDim2.new(1, -16, 0, 24), UDim2.new(0, 8, 0, 130), 18, Color3.fromRGB(255, 255, 255))
 local plotLabel = makeLabel(statsPanel, "Plot", "No base yet", UDim2.new(1, -16, 0, 24), UDim2.new(0, 8, 0, 158), 16, Color3.fromRGB(200, 200, 200))
 
--- Leaderboard under the stats panel ----------------------------------------------
+-- Leaderboard under the stats panel
 local boardPanel = Instance.new("Frame")
 boardPanel.Name = "Leaderboard"
 boardPanel.Size = UDim2.new(0, 280, 0, 190)
@@ -152,7 +152,7 @@ local function refreshLeaderboard()
 	end
 end
 
--- Top-centre wave banner + toasts -------------------------------------------------
+-- Top-centre wave banner and toasts
 local waveBanner = Instance.new("TextLabel")
 waveBanner.Name = "WaveBanner"
 waveBanner.Size = UDim2.new(0, 520, 0, 48)
@@ -214,7 +214,7 @@ notifyRemote.OnClientEvent:Connect(function(kind: string, text: string)
 	showToast(kind, text)
 end)
 
--- Bottom-centre action buttons ------------------------------------------------------
+-- Bottom-centre action buttons
 local buttonBar = Instance.new("Frame")
 buttonBar.Name = "ActionButtons"
 buttonBar.Size = UDim2.new(0, 620, 0, 54)
@@ -236,7 +236,7 @@ rebirthButton.MouseButton1Click:Connect(function()
 	rebirthRemote:FireServer()
 end)
 
--- Bottom-left context prompt ---------------------------------------------------------
+-- Bottom-left context prompt
 local promptLabel = Instance.new("TextLabel")
 promptLabel.Name = "ContextPrompt"
 promptLabel.Size = UDim2.new(0, 420, 0, 44)
@@ -252,7 +252,7 @@ local promptCorner = Instance.new("UICorner")
 promptCorner.CornerRadius = UDim.new(0, 10)
 promptCorner.Parent = promptLabel
 
--- Centre help panel --------------------------------------------------------------------
+-- Centre help panel
 local helpPanel = Instance.new("Frame")
 helpPanel.Name = "HelpPanel"
 helpPanel.Size = UDim2.new(0, 480, 0, 320)
@@ -284,7 +284,12 @@ helpButton.MouseButton1Click:Connect(function()
 	helpPanel.Visible = not helpPanel.Visible
 end)
 
--- Interaction: nearest snack ------------------------------------------------------------
+-- ---------------------------------------------------------------- interaction
+-- How close a snack must be for E to reach it (matches the server's
+-- claim range check, so the prompt never offers what the server refuses).
+local INTERACT_RANGE = 9
+
+-- The nearest claimable or stealable snack within INTERACT_RANGE studs.
 local function nearestSnack(): (Model?, string?)
 	local character = player.Character
 	local root = character and character:FindFirstChild("HumanoidRootPart") :: BasePart?
@@ -292,7 +297,7 @@ local function nearestSnack(): (Model?, string?)
 		return nil, nil
 	end
 	local best: Model? = nil
-	local bestDistance = 9
+	local bestDistance = INTERACT_RANGE
 	local bestKind: string? = nil
 	for _, model in ipairs(snacksFolder:GetChildren()) do
 		if model:IsA("Model") then
@@ -339,7 +344,7 @@ UserInputService.InputBegan:Connect(function(input: InputObject, gameProcessed: 
 	end
 end)
 
--- Prompt refresh: what is near me right now? ----------------------------------------------
+-- What is near me right now? Refreshes the bottom-left prompt.
 local function refreshPrompt()
 	if state.carrying then
 		promptLabel.Text = "Carrying " .. state.carrying .. " - RUN HOME to your base!"
@@ -358,7 +363,7 @@ local function refreshPrompt()
 	end
 end
 
--- State updates ----------------------------------------------------------------------------
+-- ---------------------------------------------------------------- state updates
 stateRemote.OnClientEvent:Connect(function(newState)
 	for key, value in pairs(newState) do
 		state[key] = value

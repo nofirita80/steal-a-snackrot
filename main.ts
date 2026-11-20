@@ -1,8 +1,8 @@
 // Steal a Snackrot: the entrypoint for make.fun's roblox-brainrot-01 bounty.
-// This program hands the game in. It copies the built place (game.rbxl),
-// the Luau sources, the screenshots and the play link from beside this
-// file into the output directory, then writes dossier.json there with
-// the vendored make.fun library. Run it as the grader does:
+// It hands the game in. It copies the built place (game.rbxl), the Luau
+// sources, the screenshots and the play link from beside this file into
+// the output directory, then writes dossier.json there with the vendored
+// make.fun library. Run it as the grader does:
 //
 //   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
 //
@@ -36,6 +36,11 @@ for (const dir of ["src", "screenshots"]) {
 		throw new Error(`Steal a Snackrot: missing required directory ${dir}/ beside main.ts.`);
 	}
 }
+
+// Make sure the output directory exists before anything is copied:
+// the grader creates it, but a missing directory must not turn into
+// a confusing copy failure here.
+mkdirSync(outDir, { recursive: true });
 
 copyFileSync(join(here, "game.rbxl"), join(outDir, "game.rbxl"));
 copyFileSync(join(here, "PLAY.json"), join(outDir, "PLAY.json"));

@@ -1,7 +1,8 @@
--- Steal a Snackrot: MapBuilder
--- Builds the giant kitchen: floor, rug, snack conveyor with sliding
--- chevrons, gate arches, back wall with shelves and the big gold sign,
--- six coloured base plots, kitchen decorations and the wave wall.
+-- Steal a Snackrot — MapBuilder
+-- Builds the giant kitchen: the floor and rug, the snack conveyor
+-- with its sliding chevrons, gate arches, the back wall with shelves
+-- and the big gold sign, six coloured base plots, kitchen props and
+-- the wave wall.
 
 local Config = require(script.Parent.Config)
 
@@ -16,7 +17,8 @@ local PLOT_COLORS = {
 	Color3.fromRGB(240, 130, 40),
 }
 
-local function part(parent: Instance, name: string, size: Vector3, color: Color3, pos: Vector3, material: Enum.Material?): Part
+-- One anchored, collidable part.
+local function makePart(parent: Instance, name: string, size: Vector3, color: Color3, pos: Vector3, material: Enum.Material?): Part
 	local p = Instance.new("Part")
 	p.Name = name
 	p.Size = size
@@ -29,7 +31,8 @@ local function part(parent: Instance, name: string, size: Vector3, color: Color3
 	return p
 end
 
-local function signText(parent: Instance, text: string, size: UDim2, color: Color3, scaled: boolean?)
+-- A text label painted on the front face of a part.
+local function paintText(parent: Instance, text: string, size: UDim2, color: Color3, scaled: boolean?)
 	local gui = Instance.new("SurfaceGui")
 	gui.Face = Enum.NormalId.Front
 	gui.AlwaysOnTop = false
@@ -46,22 +49,22 @@ local function signText(parent: Instance, text: string, size: UDim2, color: Colo
 end
 
 local function buildFloor(world: Folder)
-	part(world, "KitchenFloor", Vector3.new(240, 1, 200), Color3.fromRGB(210, 175, 120), Vector3.new(0, 0, 10), Enum.Material.WoodPlanks)
-	part(world, "CentreRug", Vector3.new(60, 0.2, 44), Color3.fromRGB(190, 40, 40), Vector3.new(0, 0.6, 20), Enum.Material.Fabric)
-	part(world, "RugTrim", Vector3.new(56, 0.22, 40), Color3.fromRGB(240, 200, 90), Vector3.new(0, 0.62, 20), Enum.Material.Fabric)
+	makePart(world, "KitchenFloor", Vector3.new(240, 1, 200), Color3.fromRGB(210, 175, 120), Vector3.new(0, 0, 10), Enum.Material.WoodPlanks)
+	makePart(world, "CentreRug", Vector3.new(60, 0.2, 44), Color3.fromRGB(190, 40, 40), Vector3.new(0, 0.6, 20), Enum.Material.Fabric)
+	makePart(world, "RugTrim", Vector3.new(56, 0.22, 40), Color3.fromRGB(240, 200, 90), Vector3.new(0, 0.62, 20), Enum.Material.Fabric)
 end
 
 local function buildConveyor(world: Folder): { Part }
-	part(world, "ConveyorBelt", Vector3.new(200, 1, 10), Color3.fromRGB(70, 70, 75), Vector3.new(0, 1, Config.CONVEYOR_Z))
-	part(world, "ConveyorRailNorth", Vector3.new(200, 0.8, 0.6), Color3.fromRGB(240, 200, 50), Vector3.new(0, 1.8, Config.CONVEYOR_Z - 5))
-	part(world, "ConveyorRailSouth", Vector3.new(200, 0.8, 0.6), Color3.fromRGB(240, 200, 50), Vector3.new(0, 1.8, Config.CONVEYOR_Z + 5))
+	makePart(world, "ConveyorBelt", Vector3.new(200, 1, 10), Color3.fromRGB(70, 70, 75), Vector3.new(0, 1, Config.CONVEYOR_Z))
+	makePart(world, "ConveyorRailNorth", Vector3.new(200, 0.8, 0.6), Color3.fromRGB(240, 200, 50), Vector3.new(0, 1.8, Config.CONVEYOR_Z - 5))
+	makePart(world, "ConveyorRailSouth", Vector3.new(200, 0.8, 0.6), Color3.fromRGB(240, 200, 50), Vector3.new(0, 1.8, Config.CONVEYOR_Z + 5))
 	for x = -90, 90, 20 do
-		part(world, "BeltLeg", Vector3.new(1.5, 1, 1.5), Color3.fromRGB(50, 50, 55), Vector3.new(x, 0.5, Config.CONVEYOR_Z))
+		makePart(world, "BeltLeg", Vector3.new(1.5, 1, 1.5), Color3.fromRGB(50, 50, 55), Vector3.new(x, 0.5, Config.CONVEYOR_Z))
 	end
 	-- Twelve yellow chevron stripes that slide along the belt.
 	local chevrons = {}
 	for i = 1, 12 do
-		local chevron = part(world, "Chevron" .. tostring(i), Vector3.new(2.5, 0.15, 7), Color3.fromRGB(250, 210, 60), Vector3.new(-95 + (i - 1) * 16, 1.6, Config.CONVEYOR_Z))
+		local chevron = makePart(world, "Chevron" .. tostring(i), Vector3.new(2.5, 0.15, 7), Color3.fromRGB(250, 210, 60), Vector3.new(-95 + (i - 1) * 16, 1.6, Config.CONVEYOR_Z))
 		chevron.CanCollide = false
 		chevron.Material = Enum.Material.Neon
 		table.insert(chevrons, chevron)
@@ -72,39 +75,37 @@ local function buildConveyor(world: Folder): { Part }
 		{ x = -100, label = "SNACK CONVEYOR" },
 		{ x = 100, label = "END OF BELT" },
 	}) do
-		local left = part(world, "GatePostLeft", Vector3.new(1.5, 12, 1.5), Color3.fromRGB(200, 50, 50), Vector3.new(gate.x, 6, Config.CONVEYOR_Z - 6))
-		local right = part(world, "GatePostRight", Vector3.new(1.5, 12, 1.5), Color3.fromRGB(200, 50, 50), Vector3.new(gate.x, 6, Config.CONVEYOR_Z + 6))
-		local _ = left
-		local _ = right
-		local beam = part(world, "GateBeam", Vector3.new(1.5, 2, 14), Color3.fromRGB(220, 60, 60), Vector3.new(gate.x, 12.5, Config.CONVEYOR_Z))
-		signText(beam, gate.label, UDim2.new(1, 0, 1, 0), Color3.fromRGB(255, 255, 255))
+		makePart(world, "GatePostLeft", Vector3.new(1.5, 12, 1.5), Color3.fromRGB(200, 50, 50), Vector3.new(gate.x, 6, Config.CONVEYOR_Z - 6))
+		makePart(world, "GatePostRight", Vector3.new(1.5, 12, 1.5), Color3.fromRGB(200, 50, 50), Vector3.new(gate.x, 6, Config.CONVEYOR_Z + 6))
+		local beam = makePart(world, "GateBeam", Vector3.new(1.5, 2, 14), Color3.fromRGB(220, 60, 60), Vector3.new(gate.x, 12.5, Config.CONVEYOR_Z))
+		paintText(beam, gate.label, UDim2.new(1, 0, 1, 0), Color3.fromRGB(255, 255, 255))
 	end
 	return chevrons
 end
 
 local function buildBackWall(world: Folder)
-	part(world, "BackWall", Vector3.new(200, 30, 2), Color3.fromRGB(235, 220, 200), Vector3.new(0, 15, -78), Enum.Material.Wood)
-	local sign = part(world, "TitleSign", Vector3.new(70, 10, 1), Color3.fromRGB(40, 30, 25), Vector3.new(0, 22, -76.5), Enum.Material.Wood)
-	signText(sign, "STEAL A SNACKROT", UDim2.new(1, 0, 1, 0), Color3.fromRGB(255, 210, 80))
+	makePart(world, "BackWall", Vector3.new(200, 30, 2), Color3.fromRGB(235, 220, 200), Vector3.new(0, 15, -78), Enum.Material.Wood)
+	local sign = makePart(world, "TitleSign", Vector3.new(70, 10, 1), Color3.fromRGB(40, 30, 25), Vector3.new(0, 22, -76.5), Enum.Material.Wood)
+	paintText(sign, "STEAL A SNACKROT", UDim2.new(1, 0, 1, 0), Color3.fromRGB(255, 210, 80))
 	-- Three wooden shelves with coloured jars.
 	for i = 1, 3 do
 		local shelfX = (i - 2) * 55
-		part(world, "Shelf" .. tostring(i), Vector3.new(36, 1, 4), Color3.fromRGB(150, 100, 55), Vector3.new(shelfX, 10, -76), Enum.Material.Wood)
+		makePart(world, "Shelf" .. tostring(i), Vector3.new(36, 1, 4), Color3.fromRGB(150, 100, 55), Vector3.new(shelfX, 10, -76), Enum.Material.Wood)
 		for j = 1, 4 do
 			local jarColor = Color3.fromRGB(200 + (j * 10) % 55, 120 + (i * 40) % 120, 80 + (j * 50) % 150)
-			part(world, "Jar" .. tostring(i) .. "_" .. tostring(j), Vector3.new(3, 4, 3), jarColor, Vector3.new(shelfX - 13 + (j - 1) * 9, 12.5, -76), Enum.Material.Glass)
+			makePart(world, "Jar" .. tostring(i) .. "_" .. tostring(j), Vector3.new(3, 4, 3), jarColor, Vector3.new(shelfX - 13 + (j - 1) * 9, 12.5, -76), Enum.Material.Glass)
 		end
 	end
 end
 
--- One base plot. angle places it on the ring; the entrance faces the centre.
+-- One base plot. `angle` places it on the ring; the entrance faces the centre.
 local function buildPlot(world: Folder, index: number, angle: number): { centre: Vector3, slots: { Vector3 }, spawn: Vector3, accent: Color3 }
 	local centre = Vector3.new(math.cos(angle) * Config.PLOT_RADIUS, 0, Config.PLOT_CENTRE.Z + math.sin(angle) * Config.PLOT_RADIUS)
 	local accent = PLOT_COLORS[index]
 
-	local platform = part(world, "Plot" .. tostring(index), Vector3.new(Config.PLOT_SIZE, 1, Config.PLOT_SIZE), Color3.fromRGB(245, 235, 210), centre + Vector3.new(0, 0.5, 0))
+	local platform = makePart(world, "Plot" .. tostring(index), Vector3.new(Config.PLOT_SIZE, 1, Config.PLOT_SIZE), Color3.fromRGB(245, 235, 210), centre + Vector3.new(0, 0.5, 0))
 	platform.Material = Enum.Material.WoodPlanks
-	part(world, "PlotTrim" .. tostring(index), Vector3.new(Config.PLOT_SIZE + 1, 0.4, Config.PLOT_SIZE + 1), accent, centre + Vector3.new(0, 0.3, 0))
+	makePart(world, "PlotTrim" .. tostring(index), Vector3.new(Config.PLOT_SIZE + 1, 0.4, Config.PLOT_SIZE + 1), accent, centre + Vector3.new(0, 0.3, 0))
 
 	-- Entrance direction: from the plot centre toward the plaza centre.
 	local toCentre = (Vector3.new(Config.PLOT_CENTRE.X, 0, Config.PLOT_CENTRE.Z) - centre).Unit
@@ -112,15 +113,16 @@ local function buildPlot(world: Folder, index: number, angle: number): { centre:
 	local half = Config.PLOT_SIZE / 2
 
 	-- Low fences on three sides, with a gap at the entrance side.
-	local function fenceRun(mid: Vector3, dir: Vector3, length: number)
-		part(world, "Fence", Vector3.new(0.6, 3, length), accent, mid + Vector3.new(0, 2, 0))
+	-- Each run is a thin bar `length` long, centred on `mid`.
+	local function fenceRun(mid: Vector3, length: number)
+		makePart(world, "Fence", Vector3.new(0.6, 3, length), accent, mid + Vector3.new(0, 2, 0))
 	end
 	-- Back side (opposite the entrance).
-	fenceRun(centre - toCentre * half, side, Config.PLOT_SIZE)
+	fenceRun(centre - toCentre * half, Config.PLOT_SIZE)
 	-- Left and right sides, each split so the entrance gap stays open.
 	for _, s in ipairs({ -1, 1 }) do
 		local sideMid = centre + side * (s * half)
-		fenceRun(sideMid - toCentre * (half / 2), toCentre, half)
+		fenceRun(sideMid - toCentre * (half / 2), half)
 	end
 
 	-- Eight slot pads in a 4-by-2 grid, and a spawn pad at the entrance.
@@ -129,14 +131,14 @@ local function buildPlot(world: Folder, index: number, angle: number): { centre:
 		for col = 0, 3 do
 			local offset = side * ((col - 1.5) * 5) + toCentre * ((row - 0.5) * 6 - 2)
 			local padPos = centre + offset + Vector3.new(0, 1.1, 0)
-			local pad = part(world, "SlotPad" .. tostring(index) .. "_" .. tostring(row * 4 + col + 1), Vector3.new(4, 0.3, 4), accent, padPos)
+			local pad = makePart(world, "SlotPad" .. tostring(index) .. "_" .. tostring(row * 4 + col + 1), Vector3.new(4, 0.3, 4), accent, padPos)
 			pad.Material = Enum.Material.Neon
 			pad.CanCollide = false
 			table.insert(slots, padPos)
 		end
 	end
 	local spawnPos = centre + toCentre * (half + 3) + Vector3.new(0, 1.2, 0)
-	local spawnPad = part(world, "SpawnPad" .. tostring(index), Vector3.new(5, 0.3, 5), Color3.fromRGB(255, 255, 255), spawnPos)
+	local spawnPad = makePart(world, "SpawnPad" .. tostring(index), Vector3.new(5, 0.3, 5), Color3.fromRGB(255, 255, 255), spawnPos)
 	spawnPad.Material = Enum.Material.Neon
 	spawnPad.CanCollide = false
 
@@ -145,40 +147,40 @@ end
 
 local function buildDecor(world: Folder)
 	-- Giant dining table at the south end, with a plate and a mug.
-	part(world, "DiningTable", Vector3.new(50, 3, 24), Color3.fromRGB(140, 90, 50), Vector3.new(0, 4, 88), Enum.Material.Wood)
-	part(world, "TableLegL", Vector3.new(3, 4, 3), Color3.fromRGB(110, 70, 40), Vector3.new(-20, 2, 88))
-	part(world, "TableLegR", Vector3.new(3, 4, 3), Color3.fromRGB(110, 70, 40), Vector3.new(20, 2, 88))
-	part(world, "Plate", Vector3.new(8, 0.5, 8), Color3.fromRGB(250, 250, 250), Vector3.new(-8, 5.8, 88), Enum.Material.Ceramic)
-	part(world, "Mug", Vector3.new(3, 4, 3), Color3.fromRGB(60, 120, 200), Vector3.new(10, 7.5, 88), Enum.Material.Ceramic)
+	makePart(world, "DiningTable", Vector3.new(50, 3, 24), Color3.fromRGB(140, 90, 50), Vector3.new(0, 4, 88), Enum.Material.Wood)
+	makePart(world, "TableLegL", Vector3.new(3, 4, 3), Color3.fromRGB(110, 70, 40), Vector3.new(-20, 2, 88))
+	makePart(world, "TableLegR", Vector3.new(3, 4, 3), Color3.fromRGB(110, 70, 40), Vector3.new(20, 2, 88))
+	makePart(world, "Plate", Vector3.new(8, 0.5, 8), Color3.fromRGB(250, 250, 250), Vector3.new(-8, 5.8, 88), Enum.Material.Ceramic)
+	makePart(world, "Mug", Vector3.new(3, 4, 3), Color3.fromRGB(60, 120, 200), Vector3.new(10, 7.5, 88), Enum.Material.Ceramic)
 
 	-- Giant white fridge on the west side.
-	part(world, "Fridge", Vector3.new(16, 34, 14), Color3.fromRGB(240, 240, 240), Vector3.new(-105, 17, 30), Enum.Material.Metal)
-	part(world, "FridgeHandle", Vector3.new(1, 10, 1.5), Color3.fromRGB(180, 180, 180), Vector3.new(-96.5, 20, 30), Enum.Material.Metal)
+	makePart(world, "Fridge", Vector3.new(16, 34, 14), Color3.fromRGB(240, 240, 240), Vector3.new(-105, 17, 30), Enum.Material.Metal)
+	makePart(world, "FridgeHandle", Vector3.new(1, 10, 1.5), Color3.fromRGB(180, 180, 180), Vector3.new(-96.5, 20, 30), Enum.Material.Metal)
 
 	-- Salt and pepper shakers near the plaza.
-	part(world, "SaltShaker", Vector3.new(3, 7, 3), Color3.fromRGB(250, 250, 250), Vector3.new(45, 3.5, 45), Enum.Material.Glass)
-	part(world, "PepperShaker", Vector3.new(3, 7, 3), Color3.fromRGB(40, 40, 40), Vector3.new(52, 3.5, 45), Enum.Material.Glass)
+	makePart(world, "SaltShaker", Vector3.new(3, 7, 3), Color3.fromRGB(250, 250, 250), Vector3.new(45, 3.5, 45), Enum.Material.Glass)
+	makePart(world, "PepperShaker", Vector3.new(3, 7, 3), Color3.fromRGB(40, 40, 40), Vector3.new(52, 3.5, 45), Enum.Material.Glass)
 
 	-- A giant spoon lying on the floor.
-	local spoonBowl = part(world, "SpoonBowl", Vector3.new(6, 1, 9), Color3.fromRGB(200, 200, 205), Vector3.new(-45, 0.8, 60), Enum.Material.Metal)
+	local spoonBowl = makePart(world, "SpoonBowl", Vector3.new(6, 1, 9), Color3.fromRGB(200, 200, 205), Vector3.new(-45, 0.8, 60), Enum.Material.Metal)
 	spoonBowl.CFrame = CFrame.new(-45, 0.8, 60) * CFrame.Angles(0, math.rad(35), 0)
-	local spoonHandle = part(world, "SpoonHandle", Vector3.new(1.5, 0.8, 16), Color3.fromRGB(200, 200, 205), Vector3.new(-38, 0.8, 52), Enum.Material.Metal)
+	local spoonHandle = makePart(world, "SpoonHandle", Vector3.new(1.5, 0.8, 16), Color3.fromRGB(200, 200, 205), Vector3.new(-38, 0.8, 52), Enum.Material.Metal)
 	spoonHandle.CFrame = CFrame.new(-38, 0.8, 52) * CFrame.Angles(0, math.rad(35), 0)
 
 	-- Three hanging lamps with warm point lights over the plaza.
 	for i = -1, 1 do
-		local lamp = part(world, "Lamp" .. tostring(i + 2), Vector3.new(4, 1, 4), Color3.fromRGB(60, 60, 60), Vector3.new(i * 40, 24, 20), Enum.Material.Metal)
+		local lamp = makePart(world, "Lamp" .. tostring(i + 2), Vector3.new(4, 1, 4), Color3.fromRGB(60, 60, 60), Vector3.new(i * 40, 24, 20), Enum.Material.Metal)
 		local light = Instance.new("PointLight")
 		light.Color = Color3.fromRGB(255, 200, 120)
 		light.Range = 60
 		light.Brightness = 2
 		light.Parent = lamp
-		part(world, "LampCord" .. tostring(i + 2), Vector3.new(0.4, 8, 0.4), Color3.fromRGB(40, 40, 40), Vector3.new(i * 40, 28, 20))
+		makePart(world, "LampCord" .. tostring(i + 2), Vector3.new(0.4, 8, 0.4), Color3.fromRGB(40, 40, 40), Vector3.new(i * 40, 28, 20))
 	end
 end
 
 local function buildWaveWall(world: Folder): Part
-	local wall = part(world, "WaveWall", Vector3.new(4, 42, 240), Color3.fromRGB(220, 30, 30), Vector3.new(Config.WAVE_PARK_X, 21, 0), Enum.Material.Neon)
+	local wall = makePart(world, "WaveWall", Vector3.new(4, 42, 240), Color3.fromRGB(220, 30, 30), Vector3.new(Config.WAVE_PARK_X, 21, 0), Enum.Material.Neon)
 	wall.Transparency = 0.45
 	wall.CanCollide = false
 	return wall
